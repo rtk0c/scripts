@@ -215,27 +215,27 @@ def download_minecraft_instance(ctx: Context, version: str) -> os.path:
 
 def do_grab(ctx: Context, args):
 	repo_path = download_minecraft_instance(ctx, args.version)
-	out_path = os.path.join(args.output, 'server.jar')
+	inst_path = os.path.join(args.output, 'server.jar')
 	if args.type == 'symlink':
-		os.symlink(repo_path, out_path)
+		os.symlink(repo_path, inst_path)
 	elif args.type == 'copy':
-		shutil.copyfile(repo_path, out_path)
+		shutil.copyfile(repo_path, inst_path)
 
 SERVER_SCRIPT_TEMPLATE = Template("""
 #!/bin/sh
 
-${java_exe} -XX:+UnlockExperimentalVMOptions \
-	-Xms${min_ram_usage} -Xmx${max_ram_usage} \
-	-XX:+UseG1GC \
-	-XX:G1NewSizePercent=30 -XX:G1MaxNewSizePercent=40 -XX:G1HeapRegionSize=8M -XX:G1ReservePercent=20 -XX:G1HeapWastePercent=5 -XX:G1MixedGCCountTarget=4 \
-	-XX:G1MixedGCLiveThresholdPercent=90 -XX:G1RSetUpdatingPauseTimePercent=5 \
-	-XX:MaxGCPauseMillis=200 -XX:MaxTenuringThreshold=1 \
-	-XX:+ParallelRefProcEnabled -XX:+DisableExplicitGC \
-	-XX:+AlwaysPreTouch \
-	-XX:InitiatingHeapOccupancyPercent=15 \
-	-XX:SurvivorRatio=32 \
-	-XX:+PerfDisableSharedMem \
-	-Dusing.aikars.flags=https://mcflags.emc.gs -Daikars.new.flags=true \
+${java_exe} -XX:+UnlockExperimentalVMOptions \\
+	-Xms${min_ram_usage} -Xmx${max_ram_usage} \\
+	-XX:+UseG1GC \\
+	-XX:G1NewSizePercent=30 -XX:G1MaxNewSizePercent=40 -XX:G1HeapRegionSize=8M -XX:G1ReservePercent=20 -XX:G1HeapWastePercent=5 -XX:G1MixedGCCountTarget=4 \\
+	-XX:G1MixedGCLiveThresholdPercent=90 -XX:G1RSetUpdatingPauseTimePercent=5 \\
+	-XX:MaxGCPauseMillis=200 -XX:MaxTenuringThreshold=1 \\
+	-XX:+ParallelRefProcEnabled -XX:+DisableExplicitGC \\
+	-XX:+AlwaysPreTouch \\
+	-XX:InitiatingHeapOccupancyPercent=15 \\
+	-XX:SurvivorRatio=32 \\
+	-XX:+PerfDisableSharedMem \\
+	-Dusing.aikars.flags=https://mcflags.emc.gs -Daikars.new.flags=true \\
 	${extra_jvm_flags} -jar ${jar_name} ${extra_mc_flags}
 """)
 
@@ -314,6 +314,11 @@ def do_setup(ctx: Context, out_dir: os.path, version: str):
 
 	with open(os.path.join(out_dir, 'eula.txt'), 'w') as f:
 		f.write('eula=true\n')
+
+	libs_repo = os.path.join(ctx.data_dir, f"server_{version}_libs")
+	libs_inst = os.path.join(out_dir, 'libraries')
+	os.makedirs(libs_repo, exist_ok=True)
+	os.symlink(libs_repo, libs_inst)
 
 def make_arg_parser() -> argparse.ArgumentParser:
 	parser = argparse.ArgumentParser(description='Minecraft Instance Downloader')
