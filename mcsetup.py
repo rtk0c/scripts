@@ -276,9 +276,9 @@ def compute_mc_version_traits(ctx: Context, version: str) -> MinecraftVersionTra
 		log4j = Log4jPatch.NONE
 	elif idx >= ctx.mc_1_17_ordinal:
 		log4j = Log4jPatch.MSG_NO_LOOKUPS
-	elif idx >= mc_1_12_ordinal:
+	elif idx >= ctx.mc_1_12_ordinal:
 		log4j = Log4jPatch.LOG4J2_112_116
-	elif idx >= mc_1_7_ordinal:
+	elif idx >= ctx.mc_1_7_ordinal:
 		log4j = Log4jPatch.LOG4J2_17_111
 	else:
 		log4j = Log4jPatch.NONE
