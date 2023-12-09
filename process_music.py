@@ -6,21 +6,22 @@ import json
 import yaml
 import argparse
 import music_tag
-
 import ffmpeg
+
 from yt_dlp import YoutubeDL
 
-import my_util as HU
+# Local script files
+import my_util as MU
 
 def make_unresolved_time(s: str) -> str | int:
 	if s == 'NEXTCHUNK' or s == 'VIDEOLENGTH':
 		return s
-	return HU.strparse_hms_to_seconds(s)
+	return MU.strparse_hms_to_seconds(s)
 
 def use_pattern(pattern, txt, idx):
 	return pattern.format(
 		index = idx + 1,
-		index_roman = HU.int_to_roman_unicode(idx + 1))
+		index_roman = MU.int_to_roman_unicode(idx + 1))
 
 # Pass 1
 def pass_postprocess_info(input_struct):
@@ -41,7 +42,7 @@ def pass_postprocess_info(input_struct):
 def pass_prepare_yt_dlp(input_struct):
 	# TODO maybe add a cache timeout for video info?
 	for entry in input_struct:
-		ytb_id = HU.get_id_from_ytb_url(entry['url'])
+		ytb_id = MU.get_id_from_ytb_url(entry['url'])
 		os.makedirs(ytb_id, exist_ok=True)
 
 		info_file_path = os.path.join(args.output_dir, ytb_id, '$info.json')
@@ -57,7 +58,7 @@ def pass_prepare_yt_dlp(input_struct):
 				info_file.write(json.dumps(info))
 
 		# Add an empty file for easy identification inside a file browser
-		marker_file_path = os.path.join(args.output_dir, ytb_id, '$$ ' + HU.format_filename_lean(info['title']))
+		marker_file_path = os.path.join(args.output_dir, ytb_id, '$$ ' + MU.format_filename_lean(info['title']))
 		try:
 			open(marker_file_path, 'x').close()
 		except:
@@ -85,7 +86,7 @@ def pass_video_dependent_info(input_struct):
 				chunks.append({
 					'begin_time': chap['start_time'],
 					'end_time': chap['end_time'],
-					'out_filename': HU.format_filename(chap['title'])
+					'out_filename': MU.format_filename(chap['title'])
 				})
 
 		for i, chunk in enumerate(chunks):
@@ -186,12 +187,19 @@ def parse_value(s):
 		return s[1:-1]
 	return s
 
+TAG_OP_PREFIX = {
+	'X': 1, #All
+	'^': 2, #Previous line
+	'S': 3, #Section
+}
+
 def parse_input_file(file):
 	input_struct = []
 
 	def make_default_entry():
 		return {'url': '', 'chunks': [], 'tag_ops': []}
 	curr_entry = make_default_entry()
+	curr_section_beg = 0
 
 	for line in file:
 		# Skip empty lines
@@ -201,16 +209,10 @@ def parse_input_file(file):
 		if line.startswith('#'):
 			continue
 
-		# 1 == All chunks
-		# 2 == Last chunk
-		tag_scope = 0
-
 		indicator = line[0]
-		if indicator == 'X':
-			tag_scope = 1
-			line = line[1:]
-		elif indicator == '^':
-			tag_scope = 2
+		tag_scope = 0
+		if indicator in TAG_OP_PREFIX:
+			tag_scope = TAG_OP_PREFIX[indicator]
 			line = line[1:]
 
 		if url_str := parse_line_with_prefix(line, "url: "):
@@ -219,7 +221,7 @@ def parse_input_file(file):
 			tp = chunk_str.strip().split(" ", 2)
 			chunks = curr_entry['chunks']
 			chunks.append({
-				'begin_time': HU.strparse_hms_to_seconds(tp[0]),
+				'begin_time': MU.strparse_hms_to_seconds(tp[0]),
 				'end_time': make_unresolved_time(tp[1]),
 				# if no name given, append chunk index
 				'chunk_name': str(len(chunks) + 1) + '.m4a' if len(tp) < 3 else tp[2],
@@ -236,26 +238,35 @@ def parse_input_file(file):
 			curr_entry['prefix'] = parse_value(ext_str)
 		elif ext_str := parse_line_with_prefix(line, 'suffix: '):
 			curr_entry['suffix'] = parse_value(ext_str)
+		elif line == "$$--SECTION BREAK--$$":
+			curr_section_beg = len(curr_entry['chunks'])
 		elif ext_str := parse_line_with_prefix(line, 'tag('):
 			(tag_names, _, ext_str) = ext_str.partition(')')
 			tag_value = parse_value(ext_str.removeprefix(': '))
 
+			tag_lists = []
 			if tag_scope == 1:
-				tag_list = curr_entry['tag_ops']
+				tag_lists.append(curr_entry['tag_ops'])
 			elif tag_scope == 2:
-				tag_list = curr_entry['chunks'][-1]['tag_ops']
+				tag_lists.append(curr_entry['chunks'][-1]['tag_ops'])
+			elif tag_scope == 3:
+				for i in range(curr_section_beg, curr_section_end - 1):
+					tag_lists.append(curr_entry['chunks'][i]['tag_ops'])
+				tag_lists.append(curr_chunk['tag_ops'])
 			else:
 				print('Error: tag scope not specified')
 				sys.exit(-1)
 
 			for tag_name in tag_names.split(','):
-				tag_list.append({
-					'name': tag_name,
-					'value': tag_value
-				})
+				for tag_list in tag_lists:
+					tag_list.append({
+						'name': tag_name,
+						'value': tag_value
+					})
 		elif line.startswith('---') and curr_entry['url']:
 			# Separator, commit curr_entry
 			input_struct.append(curr_entry)
+			curr_section_beg = 0
 			curr_entry = make_default_entry()
 
 	# Commit last entry if there is one (we assume an entry to exist only if at least a link is present)
@@ -282,7 +293,7 @@ def dump_input_struct(input_struct):
 			end_time = chunk['end_time']
 			def time_fmt(time: str | int) -> str:
 				if isinstance(time, int) or isinstance(time, float):
-					return HU.strformat_seconds(time)
+					return MU.strformat_seconds(time)
 				else:
 					return time
 			print(f"- begin_time: {time_fmt(begin_time)}")
@@ -308,7 +319,7 @@ def clean_outputs(output_dir):
 
 def prompt_continuation(input_struct, question):
 	dump_input_struct(input_struct)
-	if not HU.query_yes_no(question):
+	if not MU.query_yes_no(question):
 		print('-- Aborting')
 		sys.exit()
 	else:
@@ -343,7 +354,7 @@ if __name__ == '__main__':
 	dirty_file = os.path.join(args.output_dir, 'dirty')
 	if os.path.isfile(dirty_file):
 		print('-- Found working dir in dirty state, likely last run was canceled in the middle.')
-		if HU.query_yes_no('-- Try to recover?'):
+		if MU.query_yes_no('-- Try to recover?'):
 			print('-- Recovering...')
 			# TODO I wrote this dirty system before everything else, turns out this "recover" logic isn't really needed and it's just a no-op right now
 			#      beacuse we ended up using video ID as the folder name, implicitly having a map inside the filesystem. should we get rid of it?
