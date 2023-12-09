@@ -11,6 +11,17 @@ from string import Template
 from typing import Dict, Optional, TypeAlias, NamedTuple
 from dataclasses import dataclass
 
+# Local script files
+import my_util as MU
+
+def do_symlink(src: os.path, dst: os.path, on_exist: int):
+	print(f"-- Creating symlink {dst} that points to {src} in {MU.on_exist_tostr(on_exist)} mode")
+	MU.symlink(src, dst, on_exist)
+
+def do_write_file(filepath: os.path, content: str, on_exist: int = MU.OVERWRITE, permissions: int = -1):
+	print(f"-- Writing file {filepath} in {MU.on_exist_tostr(on_exist)} mode")
+	MU.write_file(filepath, content, on_exist, permissions)
+
 # Terminology:
 # - For the metadata describing list of all Minecraft versions, we call it the "version index". This is Mojang's version_manifest.json
 # - For the metadata describing a single Minecraft version, we call it the "version manifest".
@@ -82,7 +93,7 @@ LOG4J2_17_111_CONTENT = r"""
 			<AppenderRef ref="ServerGuiConsole"/>
 		</Root>
 	</Loggers>
-<script/></Configuration>
+</Configuration>
 """
 
 LOG4J2_112_116_FILENAME = 'log4j2_112-116.xml'
@@ -114,13 +125,8 @@ LOG4J2_112_116_CONTENT = r"""
 			<AppenderRef ref="ServerGuiConsole"/>
 		</Root>
 	</Loggers>
-<script/></Configuration>
+</Configuration>
 """
-
-def write_file_if_not_exists(filepath: os.path, content: str):
-	if not os.path.isfile(filepath):
-		with open(filepath, 'w') as f:
-			f.write(content)
 
 class Context:
 	data_dir: os.path
@@ -147,8 +153,8 @@ class Context:
 		except IOError:
 			print('-- index.json does not exist, downloading')
 			self.version_index = download_version_index(index_file)
-		write_file_if_not_exists(self.log4j2_17_111_path, LOG4J2_17_111_CONTENT)
-		write_file_if_not_exists(self.log4j2_112_116_path, LOG4J2_112_116_CONTENT)
+		do_write_file(self.log4j2_17_111_path, LOG4J2_17_111_CONTENT, on_exist=MU.IGNORE)
+		do_write_file(self.log4j2_112_116_path, LOG4J2_112_116_CONTENT, on_exist=MU.IGNORE)
 		self.mc_1_7_ordinal = self.get_version_basicinfo('1.7')['ordinal']
 		self.mc_1_12_ordinal = self.get_version_basicinfo('1.12')['ordinal']
 		self.mc_1_16_5_ordinal = self.get_version_basicinfo('1.16.5')['ordinal']
@@ -185,13 +191,6 @@ class Context:
 	def get_version_basicinfo(self, version: str) -> dict:
 		return self.version_index['versions'][version]
 
-def download_file(url: str, out: os.path):
-	# https://stackoverflow.com/a/39217788
-	with requests.get(url, stream=True) as r:
-		r.raise_for_status()
-		with open(out, 'wb') as f:
-			shutil.copyfileobj(r.raw, f)
-
 def download_minecraft_instance(ctx: Context, version: str) -> os.path:
 	manifest = ctx.get_version_manifest(version)
 	jar_path = os.path.join(ctx.data_dir, f"server_{version}.jar")
@@ -201,7 +200,7 @@ def download_minecraft_instance(ctx: Context, version: str) -> os.path:
 		return jar_path
 
 	jar_url = manifest['downloads']['server']['url']
-	download_file(jar_url, jar_path)
+	MU.download_file_and_save(jar_url, jar_path)
 
 	# Check file hash
 	# https://stackoverflow.com/a/44873382
@@ -216,8 +215,14 @@ def download_minecraft_instance(ctx: Context, version: str) -> os.path:
 def do_grab(ctx: Context, args):
 	repo_path = download_minecraft_instance(ctx, args.version)
 	inst_path = os.path.join(args.output, 'server.jar')
+
+	if args.on_existing_file == 'bail':
+		if os.path.isfile(inst_path):
+			raise RuntimeError(f"File {inst_path} already exists, bailing.")
+	mode = MU.OVERWRITE if args.on_existing_file == 'overwrite' else MU.IGNORE
+
 	if args.type == 'symlink':
-		os.symlink(repo_path, inst_path)
+		do_symlink(repo_path, inst_path, on_exist=mode)
 	elif args.type == 'copy':
 		shutil.copyfile(repo_path, inst_path)
 
@@ -285,40 +290,48 @@ def compute_mc_version_traits(ctx: Context, version: str) -> MinecraftVersionTra
 
 	return MinecraftVersionTraits(java_version=java_ver, log4j_patch=log4j)
 
-def do_setup(ctx: Context, out_dir: os.path, version: str):
-	traits = compute_mc_version_traits(ctx, version)
+def do_setup(ctx: Context, args):
+	path_eula_txt = os.path.join(args.output, 'eula.txt')
+	path_startserver_sh = os.path.join(args.output, 'startserver.sh')
+	traits = compute_mc_version_traits(ctx, args.version)
+
+	if args.on_existing_file == 'bail':
+		for p in [path_eula_txt, path_startserver_sh]:
+			if os.path.isfile(p):
+				raise RuntimeError(f"File {path_p} already exists, bailing.")
+	mode = MU.OVERWRITE if args.on_existing_file == 'overwrite' else MU.IGNORE
+
+	# stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR | stat.S_IRGRP | stat.S_IROTH
+	startserver_script = SERVER_SCRIPT_TEMPLATE.substitute(
+		DEFAULT_TEMPLATE_ARGS,
+		java_exe=traits.java_version.value,
+		extra_jvm_flags=traits.log4j_patch.value,
+		extra_mc_flags='nogui',
+	)
+	do_write_file(path_startserver_sh, startserver_script, on_exist=mode, permissions=0o744)
+	do_write_file(path_eula_txt, 'eula=true\n', on_exist=mode)
 
 	match traits.log4j_patch:
 		case Log4jPatch.NONE | Log4jPatch.MSG_NO_LOOKUPS:
 			pass
 		case Log4jPatch.LOG4J2_17_111:
-			os.symlink(ctx.log4j2_17_111_path, os.path.join(out_dir, LOG4J2_17_111_FILENAME))
+			do_symlink(ctx.log4j2_17_111_path, os.path.join(args.output, LOG4J2_17_111_FILENAME), on_exist=mode)
 		case Log4jPatch.LOG4J2_112_116:
-			os.symlink(ctx.log4j2_112_116_path, os.path.join(out_dir, LOG4J2_112_116_FILENAME))
+			do_symlink(ctx.log4j2_112_116_path, os.path.join(args.output, LOG4J2_112_116_FILENAME), on_exist=mode)
 
-	# https://stackoverflow.com/a/45368120
-	startserver_sh = os.path.join(out_dir, 'startserver.sh')
-	startserver_sh_fd = os.open(
-		path=startserver_sh,
-		flags=os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
-		# stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR | stat.S_IRGRP | stat.S_IROTH
-		mode=0o744,
-	)
-	with open(startserver_sh_fd, 'w') as f:
-		f.write(SERVER_SCRIPT_TEMPLATE.substitute(
-			DEFAULT_TEMPLATE_ARGS,
-			java_exe=traits.java_version.value,
-			extra_jvm_flags=traits.log4j_patch.value,
-			extra_mc_flags='nogui',
-		))
-
-	with open(os.path.join(out_dir, 'eula.txt'), 'w') as f:
-		f.write('eula=true\n')
-
-	libs_repo = os.path.join(ctx.data_dir, f"server_{version}_libs")
-	libs_inst = os.path.join(out_dir, 'libraries')
+	# Turns out (at least I _believe_ so) minecraft's libraries always include the version in their file names.
+	# Same for Forge and Fabric.
+	# So we can save some storage even further by just making every version share the same libraries folder.
+	libs_repo = os.path.join(ctx.data_dir, f"libraries")
+	libs_inst = os.path.join(args.output, 'libraries')
 	os.makedirs(libs_repo, exist_ok=True)
-	os.symlink(libs_repo, libs_inst)
+	do_symlink(libs_repo, libs_inst, on_exist=mode)
+
+def make_grablike_parser(parser: argparse.ArgumentParser):
+	parser.add_argument('version', help='Minecraft version string, like 1.7.10 or 23w16a')
+	parser.add_argument('-o', '--output', default='.', help='Output directory.')
+	parser.add_argument('-t', '--type', choices=['symlink', 'copy'], default='symlink', help='Method of getting the instance.')
+	parser.add_argument('-e', '--on-existing-file', choices=['bail', 'overwrite', 'ignore'], default='ignore', help='Action to perform when a file to be written already exists.')
 
 def make_arg_parser() -> argparse.ArgumentParser:
 	parser = argparse.ArgumentParser(description='Minecraft Instance Downloader')
@@ -334,14 +347,10 @@ def make_arg_parser() -> argparse.ArgumentParser:
 	subparser_download.add_argument('version', help='Minecraft version string, like 1.7.10 or 23w16a')
 
 	subparser_grab = subparsers.add_parser('grab', help='Get a Minecraft instance into some output directory; download it if it has not been downloaded already.')
-	subparser_grab.add_argument('version', help='Minecraft version string, like 1.7.10 or 23w16a')
-	subparser_grab.add_argument('-o', '--output', default='.', help='Output directory.')
-	subparser_grab.add_argument('-t', '--type', choices=['symlink', 'copy'], default='symlink', help='Method of getting the instance.')
+	make_grablike_parser(subparser_grab)
 
 	subparser_setup = subparsers.add_parser('setup', help='Setup a Minecraft instance with all the necessary files in addition to the server jar.')
-	subparser_setup.add_argument('version', help='Minecraft version string, like 1.7.10 or 23w16a')
-	subparser_setup.add_argument('-o', '--output', default='.', help='Output directory.')
-	subparser_setup.add_argument('-t', '--type', choices=['symlink', 'copy'], default='symlink', help='Method of getting the instance.')
+	make_grablike_parser(subparser_setup)
 
 	return parser
 
@@ -366,7 +375,7 @@ def run_user_facing_program(args):
 		case 'setup':
 			ctx.setup()
 			do_grab(ctx, args)
-			do_setup(ctx, args.output, args.version)
+			do_setup(ctx, args)
 
 if __name__ == "__main__":
 	args = make_arg_parser().parse_args()
