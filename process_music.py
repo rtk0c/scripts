@@ -5,9 +5,9 @@ import shutil
 import json
 import yaml
 import argparse
-import music_tag
 import ffmpeg
-
+from typing import Optional
+import music_tag
 from yt_dlp import YoutubeDL
 
 # Local script files
@@ -104,28 +104,48 @@ def pass_video_dependent_info(input_struct):
 				fn += use_pattern(use_suffix, fn, i)
 			chunk['out_filename'] = fn
 
+def obtain_video_with_yt_dlp(video_url: str):
+	existing_files = set(glob.glob('*.m4a'))
+	ydl.download(video_url)
+	for file in glob.iglob('*.m4a'):
+		if file not in existing_files:
+			# This is our downloaded video file
+			# We don't try to get the filename from yt-dlp because AFIAK that's unstable across versions
+			# and trying to duplicate their title legalize logic is a pain in he ass
+			os.rename(file, '$mainfile.m4a')
+
+def obtain_video_reuse(video_id: str, reuse_dir: os.path) -> bool:
+	# Try to find a existing file
+	files = glob.glob(os.path.join(reuse_dir, '*.m4a'))
+	for filepath in files:
+		filename = os.path.basename(filepath)
+		if filename.find(video_id) != -1 and MU.query_yes_no(f"-- Reuse '{filepath}' for the video {video_id}?"):
+			shutil.copyfile(filepath, './$mainfile.m4a')
+			return True
+	return False
+
+def obtain_video(video_id: str, video_url: str, reuse_dir: Optional[os.path]):
+	if os.path.isfile('$mainfile.m4a'):
+		print('-- $mainfile.m4a already exists, skipping dowload')
+		return
+	elif reuse_dir is not None:
+		if obtain_video_reuse(video_id, reuse_dir):
+			print('-- Reused existing file.')
+			return
+	obtain_video_with_yt_dlp(video_url)
+
 # Pass 4
-def pass_download_yt_dlp(input_struct):
+def pass_download_yt_dlp(input_struct, reuse_dir: Optional[os.path]):
 	for entry in input_struct:
 		# TODO is there a way to skip redownloading the info json?
 		# TODO maybe there is a way to make yt-dlp download to a folder directly instead of this jank mess of changing cwd
 
 		# At this point, we have the proper ID obtained from yt-dlp
 		# But keep consistent with previous code here just in case our ID extraction logic is buggy and got a different one than theirs
-		os.chdir(entry['video_id'])
-
-		if not os.path.isfile('$mainfile.m4a'):
-			existing_files = set(glob.glob('*.m4a'))
-			ydl.download(entry['url'])
-			for file in glob.iglob('*.m4a'):
-				if file not in existing_files:
-					# This is our downloaded video file
-					# We don't try to get the filename from yt-dlp because AFIAK that's unstable across versions
-					# and trying to duplicate their title legalize logic is a pain in he ass
-					os.rename(file, '$mainfile.m4a')
-		else:
-			print('-- $mainfile.m4a already exists, skipping dowload')
-
+		video_id = entry['video_id']
+		video_url = entry['url']
+		os.chdir(video_id)
+		obtain_video(video_id, video_url, reuse_dir)
 		os.chdir('..')
 
 # Pass 6
@@ -328,6 +348,7 @@ def prompt_continuation(input_struct, question):
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser(prog='process_music.py', description='Music downloader and splicer')
 	parser.add_argument('command_file', nargs='?')
+	parser.add_argument('--reuse', help='Directory to search for existing video files. File names must contain the video ID.')
 	parser.add_argument('-o', '--output-dir', default='/tmp/hnosm--process_music/')
 	# It's much cleaner, logical, and intuitive if we had `-c outputs` and `-c everything`, but that's not as ergonomic for an experience user
 	parser.add_argument('-c', '--clean-outputs', action='store_true')
@@ -337,7 +358,7 @@ if __name__ == '__main__':
 
 	if args.clean_everything:
 		print(f'-- Cleaning everything in output directory {args.output_dir}')
-		# TODO
+		shutil.rmtree(args.output_dir)
 	elif args.clean_outputs:
 		print(f'-- Cleaning output files in output directory {args.output_dir}')
 		clean_outputs(args.output_dir)
@@ -347,6 +368,8 @@ if __name__ == '__main__':
 	else:
 		print('-- No commands file provided, quitting')
 		sys.exit()
+
+	print(f"-- Reuse dir: {args.reuse}")
 
 	os.makedirs(args.output_dir, exist_ok=True)
 	os.chdir(args.output_dir)
@@ -387,7 +410,7 @@ if __name__ == '__main__':
 
 		print('\n' * 2)
 
-		pass_download_yt_dlp(input_struct)
+		pass_download_yt_dlp(input_struct, args.reuse)
 		pass_split_chunks(input_struct)
 		pass_apply_tag_ops(input_struct)
 
