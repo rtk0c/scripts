@@ -168,8 +168,6 @@ def obtain_video(video_id: str, video_url: str, reuse_dir: Optional[os.path]) ->
 # Pass 4
 def pass_download_yt_dlp(input_struct: InputStruct, reuse_dir: Optional[os.path]):
 	for job in input_struct.job_list:
-		# TODO maybe there is a way to make yt-dlp download to a folder directly instead of this jank mess of changing cwd
-
 		# At this point, we have the proper ID obtained from yt-dlp
 		# But keep consistent with previous code here just in case our ID extraction logic is buggy and got a different one than theirs
 		video_id = job.video_id
@@ -178,6 +176,17 @@ def pass_download_yt_dlp(input_struct: InputStruct, reuse_dir: Optional[os.path]
 		mainfile, ext = obtain_video(video_id, video_url, reuse_dir)
 		input_struct.mainfile = mainfile
 		input_struct.mainfile_ext = ext
+		if ext == '.webm':
+			# TODO actually make sure it's an opus/vorbis stream...
+			basename, _ = os.path.splitext(mainfile)
+			new_name = f"{basename}.ogg"
+			stream = ffmpeg.input(mainfile)
+			stream = ffmpeg.output(stream, new_name, acodec="copy")
+			stream = ffmpeg.overwrite_output(stream)
+			ffmpeg.run(stream)
+			input_struct.mainfile = new_name
+			input_struct.mainfile_ext = '.ogg'
+			os.remove(mainfile)
 		os.chdir('..')
 
 # Pass 6
