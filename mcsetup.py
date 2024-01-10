@@ -301,13 +301,14 @@ def do_setup(ctx: Context, args):
 				raise RuntimeError(f"File {path_p} already exists, bailing.")
 	mode = MU.OVERWRITE if args.on_existing_file == 'overwrite' else MU.IGNORE
 
-	# stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR | stat.S_IRGRP | stat.S_IROTH
 	startserver_script = SERVER_SCRIPT_TEMPLATE.substitute(
 		DEFAULT_TEMPLATE_ARGS,
 		java_exe=traits.java_version.value,
 		extra_jvm_flags=traits.log4j_patch.value,
 		extra_mc_flags='nogui',
 	)
+	# 0o744 = rwxr--r--
+	#       = stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR | stat.S_IRGRP | stat.S_IROTH
 	do_write_file(path_startserver_sh, startserver_script, on_exist=mode, permissions=0o744)
 	do_write_file(path_eula_txt, 'eula=true\n', on_exist=mode)
 
