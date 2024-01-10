@@ -3,6 +3,7 @@ import glob
 import os
 import shutil
 import itertools
+import hashlib
 import argparse
 import json
 from typing import Optional
@@ -35,7 +36,7 @@ class Job():
 	chunk_by_chapter: bool = False
 	prefix: Optional[str] = None
 	suffix: Optional[str] = None
-	video_id: str = ''
+	wksp_id: str = ''
 	video_info: dict = field(default_factory=dict)
 	tag_ops: list[TagOp] = field(default_factory=list)
 	chunks: list[Chunk] = field(default_factory=list)
@@ -48,6 +49,9 @@ def use_pattern(pattern, txt, idx):
 	return pattern.format(
 		index = idx + 1,
 		index_roman = MU.int_to_roman_unicode(idx + 1))
+
+def calc_workspace_id(url: str) -> str:
+	return hashlib.md5(url.encode('utf-8')).hexdigest()
 
 # Pass 1
 def pass_postprocess_info(input_struct: InputStruct):
@@ -68,10 +72,10 @@ def pass_postprocess_info(input_struct: InputStruct):
 def pass_prepare_yt_dlp(input_struct: InputStruct):
 	# TODO maybe add a cache timeout for video info?
 	for job in input_struct.job_list:
-		ytb_id = MU.get_id_from_ytb_url(job.url)
-		os.makedirs(ytb_id, exist_ok=True)
+		wksp_id = calc_workspace_id(job.url)
+		os.makedirs(wksp_id, exist_ok=True)
 
-		info_file_path = os.path.join(args.work_dir, ytb_id, '$info.json')
+		info_file_path = os.path.join(wksp_id, '$info.json')
 		try:
 			with open(info_file_path, 'r') as info_file:
 				print('-- $info.json found, loading video info')
@@ -84,13 +88,13 @@ def pass_prepare_yt_dlp(input_struct: InputStruct):
 				info_file.write(json.dumps(info))
 
 		# Add an empty file for easy identification inside a file browser
-		marker_file_path = os.path.join(args.work_dir, ytb_id, '$$ ' + MU.format_filename_lean(info['title']))
+		marker_file_path = os.path.join(wksp_id, '$$ ' + MU.format_filename_lean(info['title']))
 		try:
 			open(marker_file_path, 'x').close()
 		except:
 			pass
 
-		job.video_id = ytb_id
+		job.wksp_id = wksp_id
 		job.video_info = info
 
 # Pass 3
@@ -168,12 +172,8 @@ def obtain_video(video_id: str, video_url: str, reuse_dir: Optional[os.path]) ->
 # Pass 4
 def pass_download_yt_dlp(input_struct: InputStruct, reuse_dir: Optional[os.path]):
 	for job in input_struct.job_list:
-		# At this point, we have the proper ID obtained from yt-dlp
-		# But keep consistent with previous code here just in case our ID extraction logic is buggy and got a different one than theirs
-		video_id = job.video_id
-		video_url = job.url
-		os.chdir(video_id)
-		mainfile, ext = obtain_video(video_id, video_url, reuse_dir)
+		os.chdir(job.wksp_id)
+		mainfile, ext = obtain_video(job.video_info['id'], job.url, reuse_dir)
 		input_struct.mainfile = mainfile
 		input_struct.mainfile_ext = ext
 		if ext == '.webm':
@@ -192,9 +192,9 @@ def pass_download_yt_dlp(input_struct: InputStruct, reuse_dir: Optional[os.path]
 # Pass 6
 def pass_split_chunks(input_struct: InputStruct, output_dir: Optional[os.path]):
 	for job in input_struct.job_list:
-		# Assume cwd is already in work_dir, so just video_id is enough
-		output_prefix = output_dir if output_dir is not None else job.video_id
-		audio_filepath = os.path.join(job.video_id, input_struct.mainfile)
+		# Assume cwd is already in work_dir, so just wksp_id is enough
+		output_prefix = output_dir if output_dir is not None else job.wksp_id
+		audio_filepath = os.path.join(job.wksp_id, input_struct.mainfile)
 
 		for chunk in job.chunks:
 			chunk_filepath = os.path.join(output_prefix, chunk.out_basename + input_struct.mainfile_ext)
@@ -459,9 +459,9 @@ if __name__ == '__main__':
 		print(f"-- Using output dir {os.path.abspath(args.output_dir)}")
 		os.makedirs(args.output_dir, exist_ok=True)
 	else:
-		print("-- Using ouput dir same as each video's work dir")
+		print("-- Using output dir same as each video's work dir")
 
-	dirty_file = os.path.join(args.work_dir, 'dirty')
+	dirty_file = 'dirty'
 	if os.path.isfile(dirty_file):
 		print('-- Found working dir in dirty state, likely last run was canceled in the middle.')
 		if MU.query_yes_no('-- Try to recover?'):
@@ -504,3 +504,4 @@ if __name__ == '__main__':
 		pass_apply_tag_ops(input_struct)
 
 	os.remove(dirty_file)
+	os.chdir('..')
