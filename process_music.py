@@ -5,7 +5,7 @@ import shutil
 import itertools
 import argparse
 import json
-from typing import Optional
+from typing import Optional, Tuple
 
 import ffmpeg
 import music_tag
@@ -14,13 +14,6 @@ from yt_dlp import YoutubeDL
 # Local script files
 import my_util as MU
 
-# TODO don't assume .m4a files
-
-def make_unresolved_time(s: str) -> str | int:
-	if s == 'NEXTCHUNK' or s == 'VIDEOLENGTH':
-		return s
-	return MU.strparse_hms_to_seconds(s)
-
 def use_pattern(pattern, txt, idx):
 	return pattern.format(
 		index = idx + 1,
@@ -28,7 +21,7 @@ def use_pattern(pattern, txt, idx):
 
 # Pass 1
 def pass_postprocess_info(input_struct):
-	for entry in input_struct:
+	for entry in input_struct['chunk_list']:
 		url = entry['url']
 		chunks = entry['chunks']
 		for i in range(len(chunks)):
@@ -44,7 +37,7 @@ def pass_postprocess_info(input_struct):
 # Pass 2
 def pass_prepare_yt_dlp(input_struct):
 	# TODO maybe add a cache timeout for video info?
-	for entry in input_struct:
+	for entry in input_struct['chunk_list']:
 		ytb_id = MU.get_id_from_ytb_url(entry['url'])
 		os.makedirs(ytb_id, exist_ok=True)
 
@@ -72,11 +65,10 @@ def pass_prepare_yt_dlp(input_struct):
 
 # Pass 3
 def pass_video_dependent_info(input_struct):
-	for entry in input_struct:
+	for entry in input_struct['chunk_list']:
 		url = entry['url']
 		video_info = entry['video_info']
 		chunks = entry['chunks']
-		append_filename = entry.get('use_file_extension')
 		use_suffix = entry.get('suffix')
 		use_prefix = entry.get('prefix')
 
@@ -89,7 +81,7 @@ def pass_video_dependent_info(input_struct):
 				chunks.append({
 					'begin_time': chap['start_time'],
 					'end_time': chap['end_time'],
-					'out_filename': MU.format_filename(chap['title'])
+					'out_basename': MU.format_filename(chap['title'])
 				})
 
 		for i, chunk in enumerate(chunks):
@@ -99,45 +91,58 @@ def pass_video_dependent_info(input_struct):
 			if use_prefix:
 				fn = use_pattern(use_prefix, fn, i)
 			fn += chunk['chunk_name']
-			if append_filename:
-				fn += append_filename
 			if use_suffix:
 				fn += use_pattern(use_suffix, fn, i)
-			chunk['out_filename'] = fn
+			chunk['out_basename'] = fn
 
-def obtain_video_with_yt_dlp(video_url: str):
+def obtain_video_with_yt_dlp(video_url: str) -> Tuple[str, str]:
 	existing_files = set(os.listdir())
 	ydl.download_with_info_file('$info.json')
-	for file in glob.iglob('*.m4a'):
+	for file in os.listdir():
 		if file not in existing_files:
+			_, ext = os.path.splitext(file)
 			# This is our downloaded video file
 			# We don't try to get the filename from yt-dlp because AFIAK that's unstable across versions
 			# and trying to duplicate their title legalize logic is a pain in he ass
-			os.rename(file, f"$mainfile.m4a")
+			mainfile = f"$mainfile{ext}"
+			os.rename(file, mainfile)
+			return (mainfile, ext)
 
-def obtain_video_reuse(video_id: str, reuse_dir: os.path) -> bool:
+MUSIC_EXTS = ['.mp3', '.m4a', '.flac', '.alac', '.wav', '.opus']
+
+def obtain_video_reuse(video_id: str, reuse_dir: os.path) -> Optional[Tuple[str, str]]:
 	# Try to find a existing file
-	files = glob.glob(os.path.join(reuse_dir, '*.m4a'))
-	for filepath in files:
+	for filepath in os.listdir(reuse_dir):
 		filename = os.path.basename(filepath)
-		if filename.find(video_id) != -1 and MU.query_yes_no(f"-- Reuse '{filepath}' for the video {video_id}?"):
-			shutil.copyfile(filepath, './$mainfile.m4a')
-			return True
-	return False
+		base, ext = os.path.splitext(filename)
+		if (ext in MUSIC_EXTS
+			and base.find(video_id) != -1
+			and MU.query_yes_no(f"-- Reuse '{filepath}' for the video {video_id}?")
+		):
+			mainfile = f"./$mainfile{ext}"
+			shutil.copyfile(filepath, mainfile)
+			return (mainfile, ext)
+	return None
 
-def obtain_video(video_id: str, video_url: str, reuse_dir: Optional[os.path]):
-	if os.path.isfile('$mainfile.m4a'):
-		print('-- $mainfile.m4a already exists, skipping dowload')
-		return
-	elif reuse_dir is not None:
-		if obtain_video_reuse(video_id, reuse_dir):
+def obtain_video(video_id: str, video_url: str, reuse_dir: Optional[os.path]) -> Tuple[str, str]:
+	# Use iglob to avoid overhead of collecting into a list, we just want the first item
+	# TODO maybe print a warning if there is more than one $mainfile.*
+	for mainfile in glob.iglob('$mainfile.*'):
+		print(f"-- {mainfile} already exists, skipping dowload")
+		_, ext = os.path.splitext(mainfile)
+		return (mainfile, ext)
+
+	if reuse_dir is not None:
+		result = obtain_video_reuse(video_id, reuse_dir)
+		if result is not None:
 			print('-- Reused existing file.')
-			return
-	obtain_video_with_yt_dlp(video_url)
+			return result
+
+	return obtain_video_with_yt_dlp(video_url)
 
 # Pass 4
 def pass_download_yt_dlp(input_struct, reuse_dir: Optional[os.path]):
-	for entry in input_struct:
+	for entry in input_struct['chunk_list']:
 		# TODO is there a way to skip redownloading the info json?
 		# TODO maybe there is a way to make yt-dlp download to a folder directly instead of this jank mess of changing cwd
 
@@ -146,18 +151,20 @@ def pass_download_yt_dlp(input_struct, reuse_dir: Optional[os.path]):
 		video_id = entry['video_id']
 		video_url = entry['url']
 		os.chdir(video_id)
-		obtain_video(video_id, video_url, reuse_dir)
+		mainfile, ext = obtain_video(video_id, video_url, reuse_dir)
+		input_struct['mainfile'] = mainfile
+		input_struct['mainfile_ext'] = ext
 		os.chdir('..')
 
 # Pass 6
 def pass_split_chunks(input_struct, output_dir: Optional[os.path]):
-	for entry in input_struct:
+	for entry in input_struct['chunk_list']:
 		# Assume cwd is already in work_dir, so just video_id is enough
 		output_prefix = output_dir if output_dir is not None else entry['video_id']
-		audio_filepath = os.path.join(entry['video_id'], '$mainfile.m4a')
+		audio_filepath = os.path.join(entry['video_id'], input_struct['mainfile'])
 
 		for chunk in entry['chunks']:
-			chunk_filepath = os.path.join(output_prefix, chunk['out_filename'])
+			chunk_filepath = os.path.join(output_prefix, chunk['out_basename'] + input_struct['mainfile_ext'])
 			# Save absolute file path for later passes
 			chunk['out_filepath'] = os.path.abspath(chunk_filepath)
 
@@ -182,7 +189,7 @@ def pass_split_chunks(input_struct, output_dir: Optional[os.path]):
 
 # Pass 7
 def pass_apply_tag_ops(input_struct):
-	for entry in input_struct:
+	for entry in input_struct['chunk_list']:
 		for idx, chunk in enumerate(entry['chunks']):
 			chunk_file_path = chunk['out_filepath']
 			f = music_tag.load_file(chunk_file_path)
@@ -193,8 +200,11 @@ def pass_apply_tag_ops(input_struct):
 				if value == '$INDEX':
 					value = idx + 1
 				elif value == '$FILENAME':
-					value = chunk['out_filename']
+					value = chunk['out_basename'] + input_struct['mainfile_ext']
 				elif value == '$FILENAME_ORIG':
+					print('-- [WARN] $FILENAME_ORIG is deprecated, use $CHUNK_NAME instead')
+					value = chunk['chunk_name']
+				elif value == '$CHUNK_NAME':
 					value = chunk['chunk_name']
 				f[name] = value
 
@@ -205,6 +215,11 @@ def parse_line_with_prefix(line, prefix):
 		return line.removeprefix(prefix)
 	else:
 		return None
+
+def parse_unresolved_time(s: str) -> str | int:
+	if s == 'NEXTCHUNK' or s == 'VIDEOLENGTH':
+		return s
+	return MU.strparse_hms_to_seconds(s)
 
 def parse_value(s):
 	if not s:
@@ -223,7 +238,8 @@ TAG_OP_PREFIX = {
 }
 
 def parse_input_file(file):
-	input_struct = []
+	input_struct = {}
+	chunk_list = input_struct['chunk_list'] = []
 
 	def make_default_entry():
 		return {'url': '', 'chunks': [], 'tag_ops': []}
@@ -248,20 +264,20 @@ def parse_input_file(file):
 			curr_entry['url'] = url_str.strip()
 		elif chunk_str := parse_line_with_prefix(line, 'chunk: '):
 			tp = chunk_str.strip().split(" ", 2)
+			if len(tp) != 3:
+				raise RuntimeError('chunk string need exactly 3 components: BEGIN_TIME, END_TIME, CHUNK_NAME separated by spaces')
 			chunks = curr_entry['chunks']
 			chunks.append({
 				'begin_time': MU.strparse_hms_to_seconds(tp[0]),
-				'end_time': make_unresolved_time(tp[1]),
-				# if no name given, append chunk index
-				'chunk_name': str(len(chunks) + 1) + '.m4a' if len(tp) < 3 else parse_value(tp[2]),
-				# To be filled in postprocess pass
-				'out_filename': '',
+				'end_time': parse_unresolved_time(tp[1]),
+				'chunk_name': parse_value(tp[2]),
 				'tag_ops': []
 			})
 		elif line.startswith('chunk_by_chapter: true'):
 			curr_entry['chunk_by_chapter'] = True
 		elif ext_str := parse_line_with_prefix(line, 'use_file_extension: '):
-			curr_entry['use_file_extension'] = parse_value(ext_str)
+			print('-- [WARN] Directive use_file_extension is now deprecated. Chunks file extension will be automatically extracted from the video info.')
+			#curr_entry['use_file_extension'] = parse_value(ext_str)
 		elif ext_str := parse_line_with_prefix(line, 'prefix: '):
 			curr_entry['prefix'] = parse_value(ext_str)
 		elif ext_str := parse_line_with_prefix(line, 'suffix: '):
@@ -292,13 +308,13 @@ def parse_input_file(file):
 					})
 		elif line.startswith('---') and curr_entry['url']:
 			# Separator, commit curr_entry
-			input_struct.append(curr_entry)
+			chunk_list.append(curr_entry)
 			curr_section_beg = 0
 			curr_entry = make_default_entry()
 
 	# Commit last entry if there is one (we assume an entry to exist only if at least a link is present)
 	if curr_entry['url']:
-		input_struct.append(curr_entry)
+		chunk_list.append(curr_entry)
 
 	return input_struct
 
@@ -336,11 +352,9 @@ def parse_input_file_yaml(file):
 	pass # TODO
 
 def dump_input_struct(input_struct):
-	# Just realized I don't actually need this, I can just print the dict using python's default formatting
-	#print(json.dumps(input_struct, sort_keys=True, indent=4))
-	for entry in input_struct:
+	# TODO other fields
+	for entry in input_struct['chunk_list']:
 		print(f"url: \"{entry['url']}\"")
-		print(f"use_file_extension: {entry.get('use_file_extension')}")
 		print(f"chunk_by_chapter: {bool(entry.get('chunk_by_chapter'))}")
 		print(f"prefix: {entry.get('prefix')}")
 		print(f"suffix: {entry.get('suffix')}")
@@ -356,11 +370,12 @@ def dump_input_struct(input_struct):
 			print(f"- begin_time: {time_fmt(begin_time)}")
 			print(f"  end_time: {time_fmt(end_time)}")
 			print(f"  chunk_name: \"{chunk['chunk_name']}\"")
-			print(f"  out_filename: \"{chunk['out_filename']}\"")
-			print(f"  tag_ops:")
-			for tag_op in chunk['tag_ops']:
-				print(f"  - name: {tag_op['name']}")
-				print(f"    value: \"{tag_op['value']}\"")
+			print(f"  out_basename: \"{chunk.get('out_basename')}\"")
+			if 'tag_ops' in chunk:
+				print(f"  tag_ops:")
+				for tag_op in chunk['tag_ops']:
+					print(f"  - name: {tag_op['name']}")
+					print(f"    value: \"{tag_op['value']}\"")
 		print('tag_ops:')
 		for tag_op in entry['tag_ops']:
 			print(f"- name: {tag_op['name']}")
@@ -391,6 +406,7 @@ if __name__ == '__main__':
 	# It's much cleaner, logical, and intuitive if we had `-c outputs` and `-c everything`, but that's not as ergonomic for an experience user
 	parser.add_argument('-c', '--clean-outputs', action='store_true')
 	parser.add_argument('-C', '--clean-everything', action='store_true')
+	parser.add_argument('--format', default='bestaudio')
 
 	args = parser.parse_args()
 
@@ -438,9 +454,7 @@ if __name__ == '__main__':
 	print('\n' * 2)
 
 	ydl_opts = {
-	# TODO use bestaudio
-	# this gives opus from youtube which apple music cannot paly
-		'format': '140',
+		'format': args.format,
 		# yt-dlp automatically downloads all playlist items, no need to specify anything
 		# The heuristic for handling playlists is basically a detection for how many files were produced during the download process
 		# For B站的分P视频，yt-dlp会自动把它当作playlist处理；合集同理，因此不需要额外的逻辑
