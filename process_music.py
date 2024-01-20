@@ -417,6 +417,8 @@ def clean_outputs(work_dir):
 
 def prompt_continuation(input_struct: InputStruct, question):
 	dump_input_struct(input_struct)
+	if args.always_yes:
+		return
 	if not MU.query_yes_no(question):
 		print('-- Aborting')
 		sys.exit()
@@ -429,6 +431,7 @@ if __name__ == '__main__':
 	parser.add_argument('--reuse', help='Directory to search for existing video files. File names must contain the video ID.')
 	parser.add_argument('--work-dir', default='/tmp/00-myscript-process_music/')
 	parser.add_argument('--output-dir', help='Directory to place output (sliced) audio files. If relative, it is relative to --work-dir. Omit to use the same directory as work dir.')
+	parser.add_argument('-y', '--always-yes', action='store_true', help='Skip all yes/no prompts.')
 	# It's much cleaner, logical, and intuitive if we had `-c outputs` and `-c everything`, but that's not as ergonomic for an experience user
 	parser.add_argument('-c', '--clean-outputs', action='store_true')
 	parser.add_argument('-C', '--clean-everything', action='store_true')
@@ -464,7 +467,7 @@ if __name__ == '__main__':
 	dirty_file = 'dirty'
 	if os.path.isfile(dirty_file):
 		print('-- Found working dir in dirty state, likely last run was canceled in the middle.')
-		if MU.query_yes_no('-- Try to recover?'):
+		if args.always_yes or MU.query_yes_no('-- Try to recover?'):
 			print('-- Recovering...')
 			# TODO I wrote this dirty system before everything else, turns out this "recover" logic isn't really needed and it's just a no-op right now
 			#      beacuse we ended up using video ID as the folder name, implicitly having a map inside the filesystem. should we get rid of it?
