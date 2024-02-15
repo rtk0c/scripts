@@ -1,0 +1,31 @@
+# Demo config file for dst_setup_server.rb
+
+---
+cluster:
+  # All the options from cluster.ini
+  # Except, of course, the port and clustering options are automatically handled if left unspecified
+  style: endless
+  adminlist:
+    - "KU_AXBY"
+  # Apparently it's broken right now within DST
+  whitelist:
+    - "KU_AXBY"
+    - "KU_ZZZZ"
+  blocklist:
+    - "KU_SSSS"
+shards:
+  - name: Master
+    id: 1 # If omitted, auto assigned based on list index (like 1 here)
+    # The script will automatically gather all mods that are requested and modify dedicated_server_mods_setup.lua to install them
+    # Mods are still specified per shard for flexibility, but now we have YAML, use refernces and anchors to deduplicate them! (instead of the flaky symlinks)
+    mods: &shared_mods
+      - workshop_id: 123456789
+      - workshop_id: 111111111
+        config:
+          some_option: "Glorius Value"
+          another_optino: [1, 4]
+  - name: Caves
+    worldgen_preset: DST_CAVES
+    settings_preset: DST_CAVES
+    mods: *shared_mods
+
