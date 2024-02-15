@@ -320,9 +320,11 @@ def do_setup(ctx: Context, args):
 		case Log4jPatch.LOG4J2_112_116:
 			do_symlink(ctx.log4j2_112_116_path, os.path.join(args.output, LOG4J2_112_116_FILENAME), on_exist=mode)
 
-	# Turns out (at least I _believe_ so) minecraft's libraries always include the version in their file names.
-	# Same for Forge and Fabric.
-	# So we can save some storage even further by just making every version share the same libraries folder.
+	# Turns out (at least I _believe_ so) minecraft's libraries always include the version in their file names,
+	# so we can save some storage even further by just making every version share the same libraries folder.
+	# This is not true for Forge and Fabric.
+	# Forge in post-1.18 introduced some instance specific files like user_jvm_args.txt that needs to live in libraries/
+	# Fabric does not, but seems to really not like traversing through the symlink (crashes on startup during my testing)
 	libs_repo = os.path.join(ctx.data_dir, f"libraries")
 	libs_inst = os.path.join(args.output, 'libraries')
 	os.makedirs(libs_repo, exist_ok=True)
