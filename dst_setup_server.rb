@@ -4,42 +4,29 @@ require 'set'
 require 'yaml'
 require 'fileutils'
 require 'slop'
-require 'optout'
 
-class Hash
-  def merge_recursively!(b)
-    return self.merge!(b) { |key, a_item, b_item|
-      if a_item.is_a?(Hash) && b_item.is_a?(Hash)
-        return a_item.merge(b_item)
-      else
-        return b_item
-      end
-    }
+class String
+  def for_prefix(prefix)
+    yield self[(prefix.length)..] if self.start_with? prefix
   end
 end
 
 def dump_as_lua(o)
   case o
   when Hash
-    res = "{"
-    o.each do |key, value|
-      # Actually, this isn't quite necessary; as long as it's convertible to a string we don't really care
-      # Even for e.g. an array, using "[1,2,3]" as the table key doesn't really hurt
-      #raise KeyError, "Hash key must be string or a scalar convertible to string." unless key.is_a?(String) || key.is_a?(Integer)
-      res << "\"#{key.to_s}\"=#{dump_as_lua(value)},"
-    end
-    res << "}"
-    return res
+    middle = o.map { |k,v| "\"#{k.to_s}\"=#{dump_as_lua(v)}" }.join(",")
+    return "{#{middle}}"
   when Array
-    res = "["
-    o.each
-      res << dump_as_lua(elm)
-      res << ","
-    end
-    res << "]"
-    return res
+    middle = o.map { |x| dump_as_lua(x) }.join(",")
+    return "[#{middle}]"
+  when String
+    return o.dump
+  when nil
+    # nil.to_s gives an empty string, not what we want
+    return "nil"
   else
-    return o.to_s.dump
+    # Integers, floats, booleans are fine as-is
+    return o.to_s
   end
 end
 
@@ -47,8 +34,6 @@ opts = Slop.parse do |o|
   o.string '-c', '--config-file', 'input config file'
   o.string '-o', '--output', 'output directory', default: '.'
   o.string '--dst-server-dir', 'Don\'t Starve Together Dedicated Server install directory. Leave empty to read from the environment variable DST_SERVER_DIR.', default: ''
-  o.bool '-v', '--verbose', 'enable verbose mode'
-  o.bool '-q', '--quiet', 'suppress output (quiet mode)'
 end
 
 FileUtils.mkdir_p(opts[:output])
@@ -72,16 +57,16 @@ if !Dir.exist? dst_dir
   raise RuntimeError, "Specified DST server dir does not exist."
 end
 
-# Gather a list of all mods that needs to be installed
+# Gather a list of all mods that needs to be installed through Steam Workshop
 mod_list = Set.new
 conf_shards.each do |shard|
-  shard_mods = shard["mods"]
-  raise RuntimeError unless shard_mods.is_a? Hash
-
-  shard_mods.each do |mod_name, options|
+  mods = shard["mods"]
+  next if mods.nil?
+  raise RuntimeError unless mods.is_a? Hash
+  mods.each do |mod_name, options|
     raise RuntimeError unless mod_name.is_a?(String) && !mod_name.empty?
     raise RuntimeError unless options.is_a? Hash
-    mod_list.add(mod_name)
+    mod_name.for_prefix("workshop-") { |id| mod_list.add(id) }
   end
 end
 
@@ -197,16 +182,19 @@ return {
 }}
   end
 
+  mods = shard["mods"]
   File.open(File.join(opts[:output], shard["name"], "modoverrides.lua"), "w") do |f|
     f.puts "return {"
-    shard["mods"].each do |mod_name, options|
+    mods.each do |mod_name, options|
       f.puts "[\"#{mod_name}\"] = {"
       f.puts "enabled = true,"
       f.puts "configuration_options = #{dump_as_lua(options)}" unless options.empty?
       f.puts "},"
     end
     f.puts "}"
-  end unless mod_list.empty?
+  end unless mods.nil?
+  # We could omit the file too if mods.empty?, but that can be confusing as to "why is that file not generating!?"
+  # emitting an empty file tells the user more clearly that "you did something wrong, the mods block had nothing in it"
 
   File.open(File.join(opts[:output], shard["name"], "server.ini"), "w") do |f|
     # Optional config value
