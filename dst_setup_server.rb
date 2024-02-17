@@ -1,9 +1,47 @@
 #! /bin/ruby
 
-require 'slop'
+require 'set'
 require 'yaml'
-require 'optout'
 require 'fileutils'
+require 'slop'
+require 'optout'
+
+class Hash
+  def merge_recursively!(b)
+    return self.merge!(b) { |key, a_item, b_item|
+      if a_item.is_a?(Hash) && b_item.is_a?(Hash)
+        return a_item.merge(b_item)
+      else
+        return b_item
+      end
+    }
+  end
+end
+
+def dump_as_lua(o)
+  case o
+  when Hash
+    res = "{"
+    o.each do |key, value|
+      # Actually, this isn't quite necessary; as long as it's convertible to a string we don't really care
+      # Even for e.g. an array, using "[1,2,3]" as the table key doesn't really hurt
+      #raise KeyError, "Hash key must be string or a scalar convertible to string." unless key.is_a?(String) || key.is_a?(Integer)
+      res << "\"#{key.to_s}\"=#{dump_as_lua(value)},"
+    end
+    res << "}"
+    return res
+  when Array
+    res = "["
+    o.each
+      res << dump_as_lua(elm)
+      res << ","
+    end
+    res << "]"
+    return res
+  else
+    return o.to_s.dump
+  end
+end
 
 opts = Slop.parse do |o|
   o.string '-c', '--config-file', 'input config file'
@@ -12,6 +50,8 @@ opts = Slop.parse do |o|
   o.bool '-v', '--verbose', 'enable verbose mode'
   o.bool '-q', '--quiet', 'suppress output (quiet mode)'
 end
+
+FileUtils.mkdir_p(opts[:output])
 
 conf = YAML.load_file(opts[:config_file], aliases: true)
 conf_cluster = conf["cluster"]
@@ -27,6 +67,22 @@ else
 end
 if dst_dir.nil? || dst_dir.empty?
   raise RuntimeError, "No DST server install provided. Set option --dst-server-dir or environment variable DST_SERVER_DIR."
+end
+if !Dir.exist? dst_dir
+  raise RuntimeError, "Specified DST server dir does not exist."
+end
+
+# Gather a list of all mods that needs to be installed
+mod_list = Set.new
+conf_shards.each do |shard|
+  shard_mods = shard["mods"]
+  raise RuntimeError unless shard_mods.is_a? Hash
+
+  shard_mods.each do |mod_name, options|
+    raise RuntimeError unless mod_name.is_a?(String) && !mod_name.empty?
+    raise RuntimeError unless options.is_a? Hash
+    mod_list.add(mod_name)
+  end
 end
 
 # Collect whitelist, blocklist, and adminlist
@@ -71,6 +127,7 @@ File.open(File.join(opts[:output], "cluster.ini"), "w") do |f|
   f.puts "[GAMEPLAY]"
   opt.call "max_players"
   opt.call "pvp"
+  # Values: survival, endless, wilderness
   opt.call "game_mode"
   opt.call "pause_when_empty", true
   opt.call "vote_enabled"
@@ -85,7 +142,7 @@ File.open(File.join(opts[:output], "cluster.ini"), "w") do |f|
   opt.call "cluster_description"
   opt.call "cluster_intention"
   opt.call "lan_only_cluster"
-  opt.call "offlien_cluster"
+  opt.call "offline_cluster"
   opt.call "tick_rate"
   f.puts "whitelist_slots = #{whitelist.length}" unless whitelist.empty?
   opt.call "autosaver_enabled"
@@ -115,7 +172,12 @@ end
   end
 end
 
-# TODO modoverrides.lua and aggregate mods
+# Write dedicated_server_mods_setup.lua
+File.open(File.join(dst_dir, "mods", "dedicated_server_mods_setup.lua"), "w") do |f|
+  mod_list.each do |mod_name|
+    f.puts "ServerModSetup(\"#{mod_name}\")"
+  end
+end
 
 base_port = 10998
 base_port_steam_master = 28900
@@ -123,11 +185,6 @@ base_port_steam_auth = 28700
 
 conf_shards.each_with_index do |shard, i|
   FileUtils.mkdir_p(File.join(opts[:output], shard["name"]))
-
-  FileUtils.ln_s(
-    File.join(opts[:output], shard["name"], "modoverrides.lua"),
-    "../modoverrides.lua",
-    force: true)
 
   File.open(File.join(opts[:output], shard["name"], "worldgenoverride.lua"), "w") do |f|
     f.puts %{
@@ -139,7 +196,18 @@ return {
   },
 }}
   end
-  
+
+  File.open(File.join(opts[:output], shard["name"], "modoverrides.lua"), "w") do |f|
+    f.puts "return {"
+    shard["mods"].each do |mod_name, options|
+      f.puts "[\"#{mod_name}\"] = {"
+      f.puts "enabled = true,"
+      f.puts "configuration_options = #{dump_as_lua(options)}" unless options.empty?
+      f.puts "},"
+    end
+    f.puts "}"
+  end unless mod_list.empty?
+
   File.open(File.join(opts[:output], shard["name"], "server.ini"), "w") do |f|
     # Optional config value
     opt = ->(name, def_value=nil) { write_defaulted_val(f, shard, name, def_value) }
