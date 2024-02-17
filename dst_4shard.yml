@@ -1,0 +1,55 @@
+# Demo config file for dst_setup_server.rb
+# A setup for an IslandAdventures 4 shard, Forest + Caves + Island + Volcano cluster
+
+---
+cluster:
+  # All the options from cluster.ini
+  # Except, of course, the port and clustering options are automatically handled if left unspecified
+  cluster_name: My cool cluster!
+  style: survival
+  adminlist:
+    - "KU_AXBY"
+  whitelist:
+    - "KU_KKKK"
+  blocklist:
+    - "KU_SSSS"
+shards:
+  # The first shard is implicitly the master shard
+  - name: Master
+    # 'setup' controls which file to generate
+    # Note that using the unified "preset" option is not supported, please specify both worldgen and settings separately
+    world:
+      setup: worldgenoverride.lua
+      worldgen_preset: SURVIVAL_TOGETHER
+      settings_preset: SURVIVAL_TOGETHER
+    mods: &shared_mods
+      # [API] Modded Skins
+      "workshop-2812783478":
+      # [API] Gem Core
+      "workshop-1378549454":
+      # Island Adventures
+      "workshop-1467214795":
+        quickseaworthy: false
+        shipwreckedid: "3"
+        volcanoid: "4"
+        forestid: "1"
+        caveid: "2"
+  - name: Caves
+    world:
+      setup: worldgenoverride.lua
+      worldgen_preset: DST_CAVES
+      settings_preset: DST_CAVES
+    mods: *shared_mods
+  - name: Island
+    world:
+      setup: leveldataoverride.lua
+      # Specify a file path, it will be copied as leveldataoverride.lua
+      file: "~/dst/my_shipwrecked_leveldataoverride.lua"
+    mods: *shared_mods
+  - name: Volcano
+    world:
+      setup: leveldataoverride.lua
+      # Or, you can use YAML's multiline string to embed the file content directly (or regular strings! if you are that masochist)
+      content: |
+        return { ... lots of options ... }
+    mods: *shared_mods

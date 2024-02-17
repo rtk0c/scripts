@@ -1,0 +1,43 @@
+# Demo config file for dst_setup_server.rb
+# A setup for a 2 shard, Forest + Caves cluster
+
+---
+cluster:
+  cluster_name: "My cool cluster!"
+  game_mode: endless
+  adminlist:
+    - "KU_AXBY"
+shards:
+  - name: Master
+    # 'setup' controls which file to generate
+    # Note that using the unified "preset" option is not supported, please specify both worldgen and settings separately
+    world:
+      setup: worldgenoverride.lua
+      worldgen_preset: SURVIVAL_TOGETHER
+      settings_preset: SURVIVAL_TOGETHER
+    # The script will automatically gather all mods that are requested and modify dedicated_server_mods_setup.lua to install them
+    # Mods are still specified per shard for flexibility, but now we have YAML, use refernces and anchors to deduplicate them! (instead of the flaky symlinks)
+    # When a mod is listed, it's implied to be enabled; if you wish to temporarily disable a mod, simply comment the entry out
+    mods: &shared_mods
+      # Insight (Show Me+)
+      # You can leave the value as nil, the script will automatically recognize that as an empty configuration_options
+      "workshop-2189004162":
+      # [DST] Show Bundle
+      "workshop-1111658995":
+      # Global Pings
+      "workshop-2808279156":
+      # Global Positions -Remapped
+      "workshop-2902364746":
+        # You can just translate the configuration_options table from Lua to YAML
+        mode: "Easy Cartography"
+        nested:
+          table: "Are ok"
+          options: 2
+      # No Thermal Stone Durability
+      "workshop-466732225": {}
+  - name: Caves
+    world:
+      setup: worldgenoverride.lua
+      worldgen_preset: DST_CAVES
+      settings_preset: DST_CAVES
+    mods: *shared_mods
