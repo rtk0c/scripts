@@ -3,6 +3,7 @@
 require 'slop'
 require 'yaml'
 require 'optout'
+require 'fileutils'
 
 opts = Slop.parse do |o|
   o.string '-c', '--config-file', 'input config file'
@@ -20,25 +21,40 @@ if conf_shards.length <= 0
 end
 
 dst_dir = if opts.dst_server_dir?
-  ENV['DST_SERVER_DIR']
-else
   opts[:dst_server_dir]
+else
+  ENV['DST_SERVER_DIR']
 end
 if dst_dir.nil? || dst_dir.empty?
   raise RuntimeError, "No DST server install provided. Set option --dst-server-dir or environment variable DST_SERVER_DIR."
 end
 
-def dup_val(file, dict, name, def_value=nil)
+# Collect whitelist, blocklist, and adminlist
+def collect_user_list(list)
+  return [] if list.nil?
+
+  # Validate
+  raise RuntimeError if !list.is_a? Array
+  for elm in list
+    raise RuntimeError if !elm.is_a? String
+  end
+
+  # If everything is fine, we can just return it
+  return list
+end
+adminlist = collect_user_list(conf_cluster["adminlist"])
+whitelist = collect_user_list(conf_cluster["whitelist"])
+blocklist = collect_user_list(conf_cluster["blocklist"])
+
+def write_defaulted_val(file, dict, name, def_value=nil)
   if dict.key? name
     file.puts "#{name} = #{dict[name]}"
   else
-    unless def_value.nil?
-      file.puts "#{name} = #{def_value}"
-    end
+    file.puts "#{name} = #{def_value}" unless def_value.nil?
   end
 end
 
-def require_val(file, dict, name) 
+def write_required_val(file, dict, name)
   if !dict.key? name
     raise RuntimeError, "Required key: #{name}"
   end
@@ -48,36 +64,36 @@ end
 
 File.open(File.join(opts[:output], "cluster.ini"), "w") do |f|
   # Optional config value
-  def o(name, def_value=nil) dup_val(f, conf_cluster, name, def_value) end
+  opt = ->(name, def_value=nil) { write_defaulted_val(f, conf_cluster, name, def_value) }
   # Required config value
-  def r(name) require_val(f, conf_cluster, name) end
+  req = ->(name) { write_required_val(f, conf_cluster, name) }
 
   f.puts "[GAMEPLAY]"
-  o("max_players")
-  o("pvp")
-  o("game_mode")
-  o("pause_when_empty", true)
-  o("vote_enabled")
+  opt.call "max_players"
+  opt.call "pvp"
+  opt.call "game_mode"
+  opt.call "pause_when_empty", true
+  opt.call "vote_enabled"
   
   f.puts "[MISC]"
-  o("max_snapshots")
-  o("console_enabled")
+  opt.call "max_snapshots"
+  opt.call "console_enabled"
 
   f.puts "[NETWORK]"
-  r("cluster_name")
-  o("cluster_password")
-  o("cluster_description")
-  o("cluster_intention")
-  o("lan_only_cluster")
-  o("offlien_cluster")
-  o("tick_rate")
-  # TODO whitelist_slots; read this from the whitelists list property
-  o("autosaver_enabled")
+  req.call "cluster_name"
+  opt.call "cluster_password"
+  opt.call "cluster_description"
+  opt.call "cluster_intention"
+  opt.call "lan_only_cluster"
+  opt.call "offlien_cluster"
+  opt.call "tick_rate"
+  f.puts "whitelist_slots = #{whitelist.length}" unless whitelist.empty?
+  opt.call "autosaver_enabled"
   
   f.puts "[STEAM]"
-  o("steam_group_only")
-  o("steam_group_id")
-  o("steam_group_admins")
+  opt.call "steam_group_only"
+  opt.call "steam_group_id"
+  opt.call "steam_group_admins"
   
   # These configs are only needed for multi-shard clusters
   if conf["shards"].length > 1
@@ -90,6 +106,15 @@ File.open(File.join(opts[:output], "cluster.ini"), "w") do |f|
   end
 end
 
+[["whitelist.txt", whitelist],
+ ["blocklist.txt", blocklist],
+ ["adminlist.txt", adminlist]].each do |(filename, content)|
+  next if content.empty?
+  File.open(File.join(opts[:output], filename), "w") do |f|
+    content.each { |user| f.puts user }
+  end
+end
+
 # TODO modoverrides.lua and aggregate mods
 
 base_port = 10998
@@ -97,19 +122,29 @@ base_port_steam_master = 28900
 base_port_steam_auth = 28700
 
 conf_shards.each_with_index do |shard, i|
-  Dir.mkdir(File.join(opts[:output], shard["name"]))
+  FileUtils.mkdir_p(File.join(opts[:output], shard["name"]))
 
-  File.symlink(File.join(opts[:output], shard["name"], "modoverrides.lua"), "../modoverrides.lua")
+  FileUtils.ln_s(
+    File.join(opts[:output], shard["name"], "modoverrides.lua"),
+    "../modoverrides.lua",
+    force: true)
 
   File.open(File.join(opts[:output], shard["name"], "worldgenoverride.lua"), "w") do |f|
-    # TODO
+    f.puts %{
+return {
+  override_enabled = true,
+  worldgen_preset = "#{shard["worldgen_preset"]}",
+  settings_preset = "#{shard["settings_preset"]}",
+  overrides = {
+  },
+}}
   end
   
   File.open(File.join(opts[:output], shard["name"], "server.ini"), "w") do |f|
     # Optional config value
-    def o(name, def_value=nil) dup_val(f, shard, name, def_value) end
+    opt = ->(name, def_value=nil) { write_defaulted_val(f, shard, name, def_value) }
     # Required config value
-    def r(name) require_val(f, shard, name) end
+    req = ->(name) { write_required_val(f, shard, name) }
 
     f.puts "[SHARD]"
     f.puts "is_master = true" if i == 0
@@ -128,6 +163,6 @@ conf_shards.each_with_index do |shard, i|
     f.puts "authentification_port = #{base_port_steam_auth + i}"
 
     f.puts "[ACCOUNT]"
-    o("encode_user_path", true)
+    opt.call "encode_user_path", true
   end
 end
