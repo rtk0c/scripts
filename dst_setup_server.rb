@@ -34,6 +34,9 @@ opts = Slop.parse do |o|
   o.string '-c', '--config-file', 'input config file'
   o.string '-o', '--output', 'output directory', default: '.'
   o.string '--dst-server-dir', 'Don\'t Starve Together Dedicated Server install directory. Leave empty to read from the environment variable DST_SERVER_DIR.', default: ''
+  o.bool '--script', 'Whether or not to generate a script.sh for running the server.', default: true
+  o.symbol '--script-type', 'Which style of start.sh to generate. Available options: simple, tmux', default: :simple
+  o.string '--multilib', 'Which multilib to use in start.sh. Available options: x86, x86_64', default: :x86_64
 end
 
 FileUtils.mkdir_p(opts[:output])
@@ -255,3 +258,54 @@ conf_shards.each_with_index do |shard, i|
     opt.call "encode_user_path", true
   end
 end
+
+# Server start script
+File.open(File.join(opts[:output], "start.sh"), "w") do |f|
+  f.puts "#! /bin/sh"
+
+  f.puts %{
+echo 'This script intended to be run from the cluster directory. Otherwise the assumed relative paths will be wrong.'
+DATA_DIR="$PWD"
+DATA_DIR_PREFIX=$(dirname "$DATA_DIR")
+DATA_DIR_LAST=$(basename "$DATA_DIR")
+}
+
+  case opts[:multilib]
+  when :x86
+    dstds_cwd = File.join(dst_dir, "bin")
+    dstds_bin = "dontstarve_dedicated_server_nullrenderer"
+  when :x86_64
+    dstds_cwd = File.join(dst_dir, "bin64")
+    dstds_bin = "dontstarve_dedicated_server_nullrenderer_x64"
+  end
+
+  case opts[:script_type]
+  when :simple
+    # See dstserv_simple.sh for the refrence implementation
+
+    f.puts "cd '#{dstds_cwd}'"
+    conf_shards.each do |shard|
+      f.puts "./#{dstds_bin} "\
+            "-persistent_storage_root \"$DATA_DIR_PREFIX\" -conf_dir \"$DATA_DIR_LAST\" "\
+            "-cluster '#{File.basename File.expand_path opts[:output]}' -shard '#{shard["name"]}' "\
+            "-ugc_directory ../ugc_mods -console -skip_update_server_mods "\
+            "> /dev/null 2>&1 &"
+    end
+  when :tmux
+    # See dstserv_tmux.sh for the refrence implementation
+
+    f.puts "SESSION=\"DST #{conf_cluster["cluster_name"]}\""
+    f.puts "tmux new-session -d -s \"$SESSION\" 'exec /bin/sh'"
+    conf_shards.each_with_index do |shard, i|
+      if i > 0
+        f.puts "tmux new-window -t \"$SESSION\" 'exec /bin/sh'"
+      end
+
+      f.puts "tmux send-keys -t \"$SESSION\" \"cd '#{dstds_cwd}'\" Enter"
+      f.puts "tmux send-keys -t \"$SESSION\" \"./#{dstds_bin} "\
+            "-persistent_storage_root '$DATA_DIR_PREFIX' -conf_dir '$DATA_DIR_LAST' "\
+            "-cluster '#{File.basename File.expand_path opts[:output]}' -shard '#{shard["name"]}' "\
+            "-ugc_directory ../ugc_mods -console -skip_update_server_mods\" Enter"
+    end
+  end
+end if opts[:script]
