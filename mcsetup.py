@@ -358,14 +358,20 @@ def make_arg_parser() -> argparse.ArgumentParser:
 	return parser
 
 def run_user_facing_program(args):
-	ctx = Context(get_default_data_dir() if args.data_dir == '' else os.path.expanduser(args.data_dir))
+	if d := args.data_dir:
+		# Support things like ~/path/to/mcman
+		data_dir = os.path.expanduser(d)
+	elif d := os.environ.get('MCMAN_DATA_DIR'):
+		data_dir = d
+	else:
+		data_dir = get_default_data_dir()
+	ctx = Context(data_dir)
 
 	print(f"-- Using data dir: {ctx.data_dir}")
 
 	match args.subparser_name:
 		case 'update':
-			out_path = os.path.join(ctx.data_dir, 'index.json')
-			ctx.version_index = download_version_index(out_path)
+			ctx.version_index = download_version_index(os.path.join(ctx.data_dir, 'index.json'))
 		case 'list':
 			ctx.setup()
 			# TODO
