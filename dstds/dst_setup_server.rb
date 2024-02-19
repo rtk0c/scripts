@@ -32,21 +32,25 @@ end
 
 opts = Slop.parse do |o|
   o.string '-c', '--config-file', 'input config file'
-  o.string '-o', '--output', 'output directory', default: '.'
-  o.string '--dst-server-dir', 'Don\'t Starve Together Dedicated Server install directory. Leave empty to read from the environment variable DST_SERVER_DIR.', default: ''
+  o.string '-o', '--output', 'Output directory. Leave empty to use ./<config file name without extension>'
+  o.string '--dst-server-dir', 'Don\'t Starve Together Dedicated Server install directory. Leave empty to read from the environment variable DST_SERVER_DIR.'
+  o.bool '--write-installer-lua', 'Whether or not to overwrite dedicated_server_mods_setup.lua to be all the mods used by this cluster.', default: true
   o.bool '--script', 'Whether or not to generate a script.sh for running the server.', default: true
   o.symbol '--script-type', 'Which style of start.sh to generate. Available options: simple, tmux', default: :simple
   o.string '--multilib', 'Which multilib to use in start.sh. Available options: x86, x86_64', default: :x86_64
+
+  o.bool '-h', '--help'
+end
+if opts[:help]
+  puts opts
+  exit
 end
 
+if !opts.output?
+  opts[:output] = "./" + opts[:config_file].delete_suffix(".yml")
+end
+puts "-- Using output dir: #{opts[:output]}"
 FileUtils.mkdir_p(opts[:output])
-
-conf = YAML.load_file(opts[:config_file], aliases: true)
-conf_cluster = conf["cluster"]
-conf_shards = conf["shards"]
-if conf_shards.length <= 0
-  raise RuntimeError, "The cluster must have at least 1 shard."
-end
 
 dst_dir = if opts.dst_server_dir?
   opts[:dst_server_dir]
@@ -58,6 +62,13 @@ if dst_dir.nil? || dst_dir.empty?
 end
 if !Dir.exist? dst_dir
   raise RuntimeError, "Specified DST server dir does not exist."
+end
+
+conf = YAML.load_file(opts[:config_file], aliases: true)
+conf_cluster = conf["cluster"]
+conf_shards = conf["shards"]
+if conf_shards.length <= 0
+  raise RuntimeError, "The cluster must have at least 1 shard."
 end
 
 # Gather a list of all mods that needs to be installed through Steam Workshop
@@ -174,7 +185,7 @@ File.open(File.join(dst_dir, "mods", "dedicated_server_mods_setup.lua"), "w") do
   mod_list.each do |mod_name|
     f.puts "ServerModSetup(\"#{mod_name}\")"
   end
-end
+end if opts[:write_installer_lua]
 
 def get_worldgenoverride_lua(world)
   # TODO support overrides
@@ -259,16 +270,14 @@ conf_shards.each_with_index do |shard, i|
   end
 end
 
-# Server start script
-File.open(File.join(opts[:output], "start.sh"), "w") do |f|
-  f.puts "#! /bin/sh"
+ARGS_BASIC = '-persistent_storage_root "$DATA_DIR_PREFIX" -conf_dir "$DATA_DIR_LAST" -ugc_directory ../ugc_mods'
+ARGS_EXTRA = '-console -skip_update_server_mods'
 
-  f.puts %{
-echo 'This script intended to be run from the cluster directory. Otherwise the assumed relative paths will be wrong.'
-DATA_DIR="$PWD"
-DATA_DIR_PREFIX=$(dirname "$DATA_DIR")
-DATA_DIR_LAST=$(basename "$DATA_DIR")
-}
+# Generate server start script
+File.open(File.join(opts[:output], "start.sh"), "w") do |f|
+  cluster_dir_name = File.basename File.expand_path opts[:output]
+
+  f.puts "#! /bin/sh"
 
   case opts[:multilib]
   when :x86
@@ -279,33 +288,51 @@ DATA_DIR_LAST=$(basename "$DATA_DIR")
     dstds_bin = "dontstarve_dedicated_server_nullrenderer_x64"
   end
 
+  # https://stackoverflow.com/a/246128
+  f.puts %{
+CLUSTER_DIR_PATH=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+CLUSTER_DIR_NAME=$(basename "$CLUSTER_DIR_PATH")
+DATA_DIR=$(readlink -f "$CLUSTER_DIR_PATH/..")
+DATA_DIR_PREFIX=$(dirname "$DATA_DIR")
+DATA_DIR_LAST=$(basename "$DATA_DIR")
+echo "-- Running cluster at '$DATA_DIR_PREFIX/$DATA_DIR_LAST/$CLUSTER_DIR_NAME'"
+echo "-- Multilib: #{opts[:multilib]}"
+echo "-- Updating server mods..."
+cd '#{dstds_cwd}'
+./#{dstds_bin} #{ARGS_BASIC} -only_update_server_mods > /dev/null 2>&1 &
+wait
+cd -
+}
+
   case opts[:script_type]
   when :simple
-    # See dstserv_simple.sh for the refrence implementation
+    # See dstserv_simple.sh for the reference implementation
 
     f.puts "cd '#{dstds_cwd}'"
     conf_shards.each do |shard|
-      f.puts "./#{dstds_bin} "\
-            "-persistent_storage_root \"$DATA_DIR_PREFIX\" -conf_dir \"$DATA_DIR_LAST\" "\
-            "-cluster '#{File.basename File.expand_path opts[:output]}' -shard '#{shard["name"]}' "\
-            "-ugc_directory ../ugc_mods -console -skip_update_server_mods "\
-            "> /dev/null 2>&1 &"
-    end
-  when :tmux
-    # See dstserv_tmux.sh for the refrence implementation
+      shard_dir_name = shard["name"]
 
-    f.puts "SESSION=\"DST #{conf_cluster["cluster_name"]}\""
-    f.puts "tmux new-session -d -s \"$SESSION\" 'exec /bin/sh'"
+      f.puts "echo '-- Running shard #{shard_dir_name}'"
+      f.puts "./#{dstds_bin} #{ARGS_BASIC} -cluster \"$CLUSTER_DIR_NAME\" -shard '#{shard_dir_name}' #{ARGS_EXTRA} > /dev/null 2>&1 &"
+    end
+
+    f.puts "trap 'kill $(jobs -p)' EXIT"
+    f.puts "wait"
+  when :tmux
+    # See dstserv_tmux.sh for the reference implementation
+
+    f.puts "SESSION='DST #{conf_cluster["cluster_name"]}'"
     conf_shards.each_with_index do |shard, i|
-      if i > 0
-        f.puts "tmux new-window -t \"$SESSION\" 'exec /bin/sh'"
+      shard_dir_name = shard["name"]
+
+      if i == 0
+        f.puts "tmux new-session -d -s \"$SESSION\" -n '#{shard_dir_name}' 'exec /bin/sh'"
+      else
+        f.puts "tmux new-window -t \"$SESSION\" -n '#{shard_dir_name}' 'exec /bin/sh'"
       end
 
       f.puts "tmux send-keys -t \"$SESSION\" \"cd '#{dstds_cwd}'\" Enter"
-      f.puts "tmux send-keys -t \"$SESSION\" \"./#{dstds_bin} "\
-            "-persistent_storage_root '$DATA_DIR_PREFIX' -conf_dir '$DATA_DIR_LAST' "\
-            "-cluster '#{File.basename File.expand_path opts[:output]}' -shard '#{shard["name"]}' "\
-            "-ugc_directory ../ugc_mods -console -skip_update_server_mods\" Enter"
+      f.puts "tmux send-keys -t \"$SESSION\" \"./#{dstds_bin} #{ARGS_BASIC.gsub(/"/, "'")} -cluster '$CLUSTER_DIR_NAME' -shard '#{shard_dir_name}' #{ARGS_EXTRA}\" Enter"
     end
   end
 end if opts[:script]
