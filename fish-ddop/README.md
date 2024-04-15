@@ -10,3 +10,33 @@ Have you ever just wanted to have a clean folder as your cwd in the terminal, so
 - Run `dclean_all` to clear the trash dir.
 
 These files are meant to be dropped in your `$XDG_CONFIG_HOME/fish/functions`. Fish will automatically load them.
+
+# Example workflow
+
+```sh
+$ pwd
+~/Downloads
+
+$ ls
+logs.zip
+$ ddop # Now you're in a temp workspace dir
+$ ls -a
+.workspace-marker   @.there -> ~/Downloads
+
+# Doing some sutff, make use of globs extensively!
+$ unzip .there/logs.zip
+$ ls
+AppFoo-log-1.txt    AppFoo-log-2.txt    AppBar-log-1.txt    AppBar-log-2.txt
+$ rm *-1.txt
+$ 7z a logs-filtered.7z *
+$ mv logs-filtered.7z .there
+
+$ ddone # Now you're back to ~/Downloads
+$ ls
+logs.zip    logs-filtered.7z
+
+# Optinoally run this to actually delete the temp workspace dir from the trash
+$ dclean_all
+This is going to delete everything in /tmp/$USER-wksp-trash
+Do you want to continue? [y/N] y↵
+```
