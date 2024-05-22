@@ -15,17 +15,18 @@ MUSIC_EXT_STRIPPER = MU.file_ext_stripper(set(MUSIC_EXTS))
 # but not the following (bare numbers)
 #   '1' '842'
 #
-# The regex divides into three capture groups.
-# 1st: ([Nn]o\.? ?|#)? matches the prefix optionally
-# 2nd: (\d+) matches the number itself
-# 3rd has two parts:
-#   ?(1)(?:\.|-|:)? optionally matches the trailing punctuation if there is a prefix (1st capture group is non-empty)
-#   (?:\.|-|:) mandatorily matches the trailing punctuation otherwise
-# Notice the \.|-|: common to both that describes the trailing punctuation
+# The regex divides into 3 parts:
 #
-# Whole thing is wrapped in word boundary, beacuse matching 'ohno 1' makes no sense
+# 1st: (?:\b[Nn]o\.? ?|#)?   Matches the prefix optionally; non-capturing, this part we're just throwing away.
+#                            "no." at a word boundary, beacuse matching 'ohno 1' for the 'no 1' makes no sense.
+#                            "#" not so, because apparently /\b#/ does not match "#" (pound at beginning of string, or line).
+# 2nd: (\d+)       Matches the number itself.
+# 3rd is a conditional on whether or not the 1st capture matched (?(1)TRUE|FALSE)
+#   TRUE:  [.:-]?  Optionally matches the trailing punctuation if there is a prefix (1st group is non-empty).
+#   FALSE: [.:-]   Mandatorily matches the trailing punctuation otherwise.
+#
 # We match an optional extra space at the end to substitute out the extra space surrounding the index
-TRACK_NUMBER_PATTERN = re.compile(r'\b([Nn]o\.? ?|#)?(\d+)(?(1)(?:\.|-|:)?|(?:\.|-|:)) ?\b')
+TRACK_NUMBER_PATTERN = re.compile(r'(?:\b[Nn]o\.? ?|#)?(\d+)(?(1)[.:-]?|[.:-]) ?')
 
 def parse_track_number(s: str) -> Optional[int]:
   res = TRACK_NUMBER_PATTERN.search(s)
