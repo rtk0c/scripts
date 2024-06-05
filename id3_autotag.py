@@ -41,6 +41,7 @@ def parse_track_name(s: str) -> str:
 parser = argparse.ArgumentParser(prog='id3_autotag.py')
 parser.add_argument('-D', '--dry-run', action='store_true')
 parser.add_argument('-q', '--quiet', action='store_true')
+parser.add_argument('-r', '--recursive', action='store_true')
 parser.add_argument('--index', default='none', choices=['none', 'smart', 'manual'])
 parser.add_argument('--artist')
 parser.add_argument('--album')
@@ -54,9 +55,11 @@ def my_print(msg):
 if args.dry_run:
   my_print('Performing a dry run')
 
+glob_pattern = '**/*' if args.recursive else '*'
+
 music_files = []
-for ext in ['*.' + s for s in MUSIC_EXTS]:
-  music_files.extend(glob.glob(ext))
+for ext in [f"{glob_pattern}.{s}" for s in MUSIC_EXTS]:
+  music_files.extend(glob.glob(ext, recursive=args.recursive))
 music_files.sort()
 
 USER_TEMP_FILE = '/tmp/id3_autotag_tmp'
