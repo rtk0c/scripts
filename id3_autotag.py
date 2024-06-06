@@ -32,7 +32,7 @@ TRACK_NUMBER_PATTERN = re.compile(r'(?:\b[Nn]o\.? ?|#)?(\d+)(?(1)[.:-]?|[.:-]) ?
 def parse_track_number(s: str) -> Optional[int]:
   res = TRACK_NUMBER_PATTERN.search(s)
   if res:
-    return int(res.group(2))
+    return int(res.group(1))
   return None
 
 def parse_track_name(s: str) -> str:
@@ -44,6 +44,7 @@ parser.add_argument('-q', '--quiet', action='store_true')
 parser.add_argument('-r', '--recursive', action='store_true')
 parser.add_argument('--index', default='none', choices=['none', 'smart', 'manual'])
 parser.add_argument('--artist')
+parser.add_argument('--composer')
 parser.add_argument('--album')
 
 args = parser.parse_args()
@@ -70,8 +71,7 @@ if args.index == 'manual':
     f.writelines([p + '\n' for p in music_files])
 
   # Open an editor for the user to sort them
-  editor = os.getenv('EDITOR') or '/bin/vi'
-  ret = subprocess.run([editor, USER_TEMP_FILE]).returncode
+  ret = subprocess.run([MU.get_editor_exe(), USER_TEMP_FILE]).returncode
   if ret != 0:
     print("User aborted editing, bailing.", file=sys.stderr)
     sys.exit(-1)
@@ -111,6 +111,9 @@ for filepath in music_files:
   if args.artist is not None:
     my_print(f"{filepath}: Assigning artist '{args.artist}'")
     f['artist'] = args.artist
+  if args.composer is not None:
+    my_print(f"{filepath}: Assigning composer '{args.composer}'")
+    f['composer'] = args.composer
   if args.album is not None:
     my_print(f"{filepath}: Assigning album '{args.album}'")
     f['album'] = args.album

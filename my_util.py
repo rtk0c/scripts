@@ -200,3 +200,14 @@ def file_ext_stripper(exts: Set[str]):
     else:
       return s
   return stripper
+
+def get_editor_exe():
+  # Logic from moreutils vipe
+  if ed := os.getenv('EDITOR'):
+    return ed
+  elif ed := os.getenv('VISUAL'):
+    return ed
+  elif os.path.isfile('/usr/bin/editor'):
+    return '/usr/bin/editor'
+  else:
+    return 'vi'
