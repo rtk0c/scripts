@@ -8,6 +8,7 @@ import music_tag
 from typing import Optional, Tuple
 
 import my_util as MU
+import my_vipe as MVipe
 
 MUSIC_EXTS = ['mp3', 'm4a', 'flac', 'alac', 'wav', 'ogg', 'opus']
 MUSIC_EXT_STRIPPER = MU.file_ext_stripper(set(MUSIC_EXTS))
@@ -29,6 +30,8 @@ MUSIC_EXT_STRIPPER = MU.file_ext_stripper(set(MUSIC_EXTS))
 # We match an optional extra space at the end to substitute out the extra space surrounding the index
 TRACK_NUMBER_PATTERN = re.compile(r'(?:\b[Nn]o\.? ?|#)?(\d+)(?(1)[.:-]?|[.:-]) ?')
 
+YTDLP_ID_STRIPPER = re.compile(r'\[[a-zA-Z0-9-_]+\]$')
+
 def parse_track_number(s: str) -> Optional[int]:
   res = TRACK_NUMBER_PATTERN.search(s)
   if res:
@@ -42,7 +45,8 @@ parser = argparse.ArgumentParser(prog='id3_autotag.py')
 parser.add_argument('-D', '--dry-run', action='store_true')
 parser.add_argument('-q', '--quiet', action='store_true')
 parser.add_argument('-r', '--recursive', action='store_true')
-parser.add_argument('--index', default='none', choices=['none', 'smart', 'manual'])
+parser.add_argument('--index', default='none', choices=['none', 'smart', 'manual', 'manual+striptitle'])
+parser.add_argument('--strip-ytdlp-id', action='store_true')
 parser.add_argument('--artist')
 parser.add_argument('--composer')
 parser.add_argument('--album')
@@ -65,13 +69,13 @@ music_files.sort()
 
 USER_TEMP_FILE = '/tmp/id3_autotag_tmp'
 
-if args.index == 'manual':
+if args.index.startswith('manual'):
   # Put all music files into a temp file
   with open(USER_TEMP_FILE, 'w') as f:
     f.writelines([p + '\n' for p in music_files])
 
   # Open an editor for the user to sort them
-  ret = subprocess.run([MU.get_editor_exe(), USER_TEMP_FILE]).returncode
+  ret = subprocess.run([MVipe.get_preferred_editor(), USER_TEMP_FILE]).returncode
   if ret != 0:
     print("User aborted editing, bailing.", file=sys.stderr)
     sys.exit(-1)
@@ -84,6 +88,8 @@ if args.index == 'manual':
       if line == '' or line.startswith('#'):
         continue
       manual_index_map[line.strip()] = i + 1
+
+  os.remove(USER_TEMP_FILE)
 
 for filepath in music_files:
   if not args.dry_run:
@@ -100,13 +106,18 @@ for filepath in music_files:
       my_print(f"{filepath}: Assigning track number {index}, name '{track_name}'")
       f['tracknumber'] = index
       f['tracktitle'] = track_name
-  elif args.index == 'manual':
+  elif args.index.startswith('manual'):
     if index := manual_index_map.get(filepath):
       filename = os.path.basename(filepath)
-      track_name = parse_track_name(filename)
+      track_name = parse_track_name(filename) if args.index.endswith('+striptitle') else MUSIC_EXT_STRIPPER(filename)
       my_print(f"{filepath}: User assigned track number {index}, name '{track_name}'")
       f['tracknumber'] = index
       f['tracktitle'] = track_name
+
+  if args.strip_ytdlp_id:
+    orig_title = str(f['tracktitle'])
+    my_print(f"{filepath}: Stripped '{YTDLP_ID_STRIPPER.search(orig_title).group()}'")
+    f['tracktitle'] = YTDLP_ID_STRIPPER.sub('', orig_title)
 
   if args.artist is not None:
     my_print(f"{filepath}: Assigning artist '{args.artist}'")
