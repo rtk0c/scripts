@@ -4,6 +4,8 @@ import os
 import subprocess
 import re
 
+from typing import Union
+
 def get_preferred_editor():
   # TODO non-unix platforms
   # Logic from moreutils vipe source code
@@ -40,7 +42,7 @@ def vipe(initial_content):
     return updated_content
 
 
-def format_table_data(headers: list[str], dat: list[list[str]], tab_width=8) -> str:
+def format_table_data(headers: list[str], dat: list[Union[str, list[str]]], tab_width=8) -> str:
   # TODO we can't really measure text width accurately here, only a best guess possible
   # leave it as assume everything is 1-cell wide (monospace ASCII), or just don't guess at all, and insert 1 tab and be done iwth it?
 
@@ -49,10 +51,28 @@ def format_table_data(headers: list[str], dat: list[list[str]], tab_width=8) -> 
   out = []
   out.append('# ' + '\t'.join(headers))
   for row in dat:
-    out.append('\t'.join(row))
+    if isinstance(row, list):
+      out.append('\t'.join(row))
+    elif isinstance(row, str):
+      out.append(row)
 
   return '\n'.join(out)
 
-def parse_table_data(content: str) -> list[list[str]]:
+def parse_table_data(content: str, advanced=False) -> list[list[str]]:
+  lines = content.splitlines()
+
+  if advanced:
+    directives = []
+    for line in lines:
+      if line.startswith('#$'):
+        directives.append(line.removeprefix('#$'))
+
   TAB_DELIMIT = re.compile(r'\t+')
-  return [TAB_DELIMIT.split(line) for line in content.splitlines() if not line.startswith("#") and line != '']
+  rows = [TAB_DELIMIT.split(line)
+          for line in lines
+          if not line.startswith('#') and line != '']
+
+  if advanced:
+    return directives, rows
+  else:
+    return rows

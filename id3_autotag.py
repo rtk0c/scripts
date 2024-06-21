@@ -47,9 +47,6 @@ parser.add_argument('-q', '--quiet', action='store_true')
 parser.add_argument('-r', '--recursive', action='store_true')
 parser.add_argument('--index', default='none', choices=['none', 'smart', 'manual', 'manual+striptitle'])
 parser.add_argument('--strip-ytdlp-id', action='store_true')
-parser.add_argument('--artist')
-parser.add_argument('--composer')
-parser.add_argument('--album')
 
 args = parser.parse_args()
 
@@ -67,29 +64,13 @@ for ext in [f"{glob_pattern}.{s}" for s in MUSIC_EXTS]:
   music_files.extend(glob.glob(ext, recursive=args.recursive))
 music_files.sort()
 
-USER_TEMP_FILE = '/tmp/id3_autotag_tmp'
-
-if args.index.startswith('manual'):
-  # Put all music files into a temp file
-  with open(USER_TEMP_FILE, 'w') as f:
-    f.writelines([p + '\n' for p in music_files])
-
-  # Open an editor for the user to sort them
-  ret = subprocess.run([MVipe.get_preferred_editor(), USER_TEMP_FILE]).returncode
-  if ret != 0:
-    print("User aborted editing, bailing.", file=sys.stderr)
-    sys.exit(-1)
-
-  # Read music files again for their order
+if args.index.startswith('manual') and vipe_res := MVipe.vipe('\n'.join(music_files)):
   manual_index_map = {}
-  with open(USER_TEMP_FILE, 'r') as f:
-    for i, line in enumerate(f.readlines()):
-      # Skip empty lines or comments
-      if line == '' or line.startswith('#'):
-        continue
-      manual_index_map[line.strip()] = i + 1
-
-  os.remove(USER_TEMP_FILE)
+  for i, line in enumerate(vipe_res.split('\n')):
+    # Skip empty lines or comments
+    if line == '' or line.startswith('#'):
+      continue
+    manual_index_map[line.strip()] = i + 1
 
 for filepath in music_files:
   if not args.dry_run:
@@ -118,16 +99,6 @@ for filepath in music_files:
     orig_title = str(f['tracktitle'])
     my_print(f"{filepath}: Stripped '{YTDLP_ID_STRIPPER.search(orig_title).group()}'")
     f['tracktitle'] = YTDLP_ID_STRIPPER.sub('', orig_title)
-
-  if args.artist is not None:
-    my_print(f"{filepath}: Assigning artist '{args.artist}'")
-    f['artist'] = args.artist
-  if args.composer is not None:
-    my_print(f"{filepath}: Assigning composer '{args.composer}'")
-    f['composer'] = args.composer
-  if args.album is not None:
-    my_print(f"{filepath}: Assigning album '{args.album}'")
-    f['album'] = args.album
 
   if not args.dry_run:
     f.save()
