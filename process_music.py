@@ -33,6 +33,8 @@ class Chunk():
 @dataclass
 class Job():
   url: str = ''
+  mainfile: str = ''
+  mainfile_ext: str = ''
   chunk_by_chapter: bool = False
   prefix: Optional[str] = None
   suffix: Optional[str] = None
@@ -174,8 +176,8 @@ def pass_download_yt_dlp(input_struct: InputStruct, reuse_dir: Optional[os.path]
   for job in input_struct.job_list:
     os.chdir(job.wksp_id)
     mainfile, ext = obtain_video(job.video_info['id'], job.url, reuse_dir)
-    input_struct.mainfile = mainfile
-    input_struct.mainfile_ext = ext
+    job.mainfile = mainfile
+    job.mainfile_ext = ext
     if ext == '.webm':
       # TODO actually make sure it's an opus/vorbis stream...
       basename, _ = os.path.splitext(mainfile)
@@ -184,8 +186,8 @@ def pass_download_yt_dlp(input_struct: InputStruct, reuse_dir: Optional[os.path]
       stream = ffmpeg.output(stream, new_name, acodec="copy")
       stream = ffmpeg.overwrite_output(stream)
       ffmpeg.run(stream)
-      input_struct.mainfile = new_name
-      input_struct.mainfile_ext = '.ogg'
+      job.mainfile = new_name
+      job.mainfile_ext = '.ogg'
       os.remove(mainfile)
     os.chdir('..')
 
@@ -194,10 +196,10 @@ def pass_split_chunks(input_struct: InputStruct, output_dir: Optional[os.path]):
   for job in input_struct.job_list:
     # Assume cwd is already in work_dir, so just wksp_id is enough
     output_prefix = output_dir if output_dir is not None else job.wksp_id
-    audio_filepath = os.path.join(job.wksp_id, input_struct.mainfile)
+    audio_filepath = os.path.join(job.wksp_id, job.mainfile)
 
     for chunk in job.chunks:
-      chunk_filepath = os.path.join(output_prefix, chunk.out_basename + input_struct.mainfile_ext)
+      chunk_filepath = os.path.join(output_prefix, chunk.out_basename + job.mainfile_ext)
       # Save absolute file path for later passes
       chunk.out_filepath = os.path.abspath(chunk_filepath)
 
@@ -232,7 +234,7 @@ def pass_apply_tag_ops(input_struct: InputStruct):
         if value == '$INDEX':
           value = idx + 1
         elif value == '$FILENAME':
-          value = chunk.out_basename + input_struct.mainfile_ext
+          value = chunk.out_basename + job.mainfile_ext
         elif value == '$FILENAME_ORIG':
           print('-- [WARN] $FILENAME_ORIG is deprecated, use $CHUNK_NAME instead')
           value = chunk.chunk_name
