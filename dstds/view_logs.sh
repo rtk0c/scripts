@@ -1,5 +1,8 @@
 #! /bin/bash
 
+# Open the log files of the DST cluster in cwd, in tmux with `less`
+# Intended to work with dstserv_simple.sh, where there is no direct PTY access to the server itself
+
 # NOTE: these must have no spaces in them
 SESSION='DST-servers'
 DST_SERVER_NAME='testworld'
