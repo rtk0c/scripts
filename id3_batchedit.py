@@ -44,7 +44,7 @@ original_rows = itertools.chain.from_iterable([
    [str(idx)] + [str(file_tags[tag_name]) for tag_name in tags_name])
   for idx, (file_tags, file_path) in enumerate(zip(files_tags, files_path))])
 
-if vipe_res := MVipe.vipe(MVipe.format_table_data(['ID'] + tags_name, original_rows)):
+if vipe_res := MVipe.vipe(MVipe.format_table_data(['ID'] + tags_name, original_rows), syntax_hint='csv'):
   directives, edited_rows = MVipe.parse_table_data(vipe_res, advanced=True)
 
   constants = {}

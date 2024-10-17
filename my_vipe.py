@@ -22,19 +22,29 @@ def get_temp_file_path():
   # TODO non-unix platforms
   return '/tmp/myvipe-temp-file'
 
-def vipe(initial_content):
+def vipe(initial_content, syntax_hint=None):
   filepath = get_temp_file_path()
+  ed_exe = get_preferred_editor()
 
   with open(filepath, 'w') as f:
     f.write(initial_content)
 
-  ret = subprocess.run([get_preferred_editor(), filepath]).returncode
+  args = [ed_exe, filepath]
+  if syntax_hint:
+    if 'vim' in ed_exe:
+      args.append('-c')
+      args.append(f"set syntax={syntax_hint}")
+    else:
+      pass #TODO
+
+  ret = subprocess.run(args).returncode
   if ret != 0:
     return None
     #raise RuntimeError(f"Editor exited with abnormal exit-code {ret}.")
 
   with open(filepath, 'r') as f:
     updated_content = f.read()
+  os.remove(filepath)
 
   if updated_content == initial_content:
     return None
