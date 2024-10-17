@@ -139,6 +139,7 @@ class Context:
   mc_1_17_ordinal: int
   mc_1_17_1_ordinal: int
   mc_1_18_1_ordinal: int
+  mc_1_21_oridinal: int
 
   def __init__(self, data_dir: os.path):
     self.data_dir = data_dir
@@ -161,6 +162,7 @@ class Context:
     self.mc_1_17_ordinal = self.get_version_basicinfo('1.17')['ordinal']
     self.mc_1_17_1_ordinal = self.get_version_basicinfo('1.17.1')['ordinal']
     self.mc_1_18_1_ordinal = self.get_version_basicinfo('1.18.1')['ordinal']
+    self.mc_1_21_oridinal = self.get_version_basicinfo('1.21')['ordinal']
 
   def download_version_manifest(self, version: str) -> MinecraftVersionManifest:
     manifest_url = self.version_index['versions'][version]['url']
@@ -254,6 +256,7 @@ class JavaVersion(Enum):
   JAVA_8 = '/usr/lib/jvm/java-8-openjdk/bin/java'
   JAVA_16 = '/usr/lib/jvm/java-16-openjdk/bin/java'
   JAVA_17 = '/usr/lib/jvm/java-17-openjdk/bin/java'
+  JAVA_21 = '/usr/lib/jvm/java-21-openjdk/bin/java'
 
 class Log4jPatch(Enum):
   NONE = ''
@@ -268,7 +271,9 @@ class MinecraftVersionTraits(NamedTuple):
 def compute_mc_version_traits(ctx: Context, version: str) -> MinecraftVersionTraits:
   idx = ctx.get_version_basicinfo(version)['ordinal']
 
-  if idx >= ctx.mc_1_17_1_ordinal:
+  if idx >= ctx.mc_1_21_oridinal:
+    java_ver = JavaVersion.JAVA_21
+  elif idx >= ctx.mc_1_17_1_ordinal:
     java_ver = JavaVersion.JAVA_17
   elif idx >= ctx.mc_1_16_5_ordinal:
     java_ver = JavaVersion.JAVA_16
