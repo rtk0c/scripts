@@ -129,31 +129,12 @@ LOG4J2_112_116_CONTENT = r"""
 """
 
 class Context:
-  data_dir: os.path
-  version_index: MinecraftVersionIndex
-  log4j2_17_111_path: os.path
-  log4j2_112_116_path: os.path
-  mc_1_7_ordinal: int
-  mc_1_12_ordinal: int
-  mc_1_16_5_ordinal: int
-  mc_1_17_ordinal: int
-  mc_1_17_1_ordinal: int
-  mc_1_18_1_ordinal: int
-  mc_1_21_oridinal: int
-
-  def __init__(self, data_dir: os.path):
+  def __init__(self, data_dir: os.path, version_index):
     self.data_dir = data_dir
     self.log4j2_17_111_path = os.path.join(data_dir, LOG4J2_17_111_FILENAME)
     self.log4j2_112_116_path = os.path.join(data_dir, LOG4J2_112_116_FILENAME)
 
-  # Perform filesystem level initialization
-  def setup(self):
-    index_file = os.path.join(self.data_dir, 'index.json')
-    try:
-      self.version_index = load_version_index(index_file)
-    except IOError:
-      print('-- index.json does not exist, downloading')
-      self.version_index = download_version_index(index_file)
+    self.version_index = version_index
     do_write_file(self.log4j2_17_111_path, LOG4J2_17_111_CONTENT, on_exist=MU.IGNORE)
     do_write_file(self.log4j2_112_116_path, LOG4J2_112_116_CONTENT, on_exist=MU.IGNORE)
     self.mc_1_7_ordinal = self.get_version_basicinfo('1.7')['ordinal']
@@ -370,24 +351,28 @@ def run_user_facing_program(args):
     data_dir = d
   else:
     data_dir = get_default_data_dir()
-  ctx = Context(data_dir)
 
   print(f"-- Using data dir: {ctx.data_dir}")
 
+  index_file = os.path.join(self.data_dir, 'index.json')
   match args.subparser_name:
     case 'update':
-      ctx.version_index = download_version_index(os.path.join(ctx.data_dir, 'index.json'))
+      download_version_index(index_file)
+      print('-- Finished downloading version index')
+      return
+
+  ctx = Context(load_version_index(index_file))
+  match args.subparser_name:
+    case 'update':
+      pass
     case 'list':
-      ctx.setup()
+      pass
       # TODO
     case 'download':
-      ctx.setup()
       download_minecraft_instance(ctx, args.version)
     case 'grab':
-      ctx.setup()
       do_grab(ctx, args)
     case 'setup':
-      ctx.setup()
       do_grab(ctx, args)
       do_setup(ctx, args)
 
