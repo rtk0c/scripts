@@ -64,13 +64,15 @@ for ext in [f"{glob_pattern}.{s}" for s in MUSIC_EXTS]:
   music_files.extend(glob.glob(ext, recursive=args.recursive))
 music_files.sort()
 
-if args.index.startswith('manual') and vipe_res := MVipe.vipe('\n'.join(music_files)):
-  manual_index_map = {}
-  for i, line in enumerate(vipe_res.split('\n')):
-    # Skip empty lines or comments
-    if line == '' or line.startswith('#'):
-      continue
-    manual_index_map[line.strip()] = i + 1
+if args.index.startswith('manual'):
+  vipe_res = MVipe.vipe('\n'.join(music_files))
+  if vipe_res:
+    manual_index_map = {}
+    for i, line in enumerate(vipe_res.split('\n')):
+      # Skip empty lines or comments
+      if line == '' or line.startswith('#'):
+        continue
+      manual_index_map[line.strip()] = i + 1
 
 for filepath in music_files:
   if not args.dry_run:
