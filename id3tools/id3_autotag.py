@@ -7,7 +7,7 @@ import argparse
 import music_tag
 from typing import Optional, Tuple
 
-import my_util as MU
+import my_utils as MU
 import my_vipe as MVipe
 
 MUSIC_EXTS = ['mp3', 'm4a', 'flac', 'alac', 'wav', 'ogg', 'opus']

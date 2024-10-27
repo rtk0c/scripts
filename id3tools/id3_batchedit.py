@@ -5,7 +5,6 @@ import itertools
 import argparse
 import music_tag
 
-import my_util as MU
 import my_vipe as MVipe
 
 # get list of files from stdin
