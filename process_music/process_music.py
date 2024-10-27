@@ -14,7 +14,7 @@ import music_tag
 from yt_dlp import YoutubeDL
 
 # Local script files
-import my_util as MU
+import my_utils as MU
 
 @dataclass
 class TagOp():
@@ -90,7 +90,7 @@ def pass_prepare_yt_dlp(input_struct: InputStruct):
         info_file.write(json.dumps(info))
 
     # Add an empty file for easy identification inside a file browser
-    marker_file_path = os.path.join(wksp_id, '$$ ' + MU.format_filename_lean(info['title']))
+    marker_file_path = os.path.join(wksp_id, '$$ ' + MU.format_filename(info['title']))
     try:
       open(marker_file_path, 'x').close()
     except:
