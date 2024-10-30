@@ -18,7 +18,7 @@ GIT_HOME=/srv/git
 # e.g. "test" -> realpath("/test") -> "test"
 #      "/test" -> realpath("//test") -> "test"
 #      "../test" -> realpath("/../test") -> "test"
-REPO_LOCATION=$(realpath --relative-to=/ "/$1")
+REPO_LOCATION=$(realpath --relative-to=/ -m "/$1")
 # All dir components except the actual repository
 # e.g. if the user tries to run `git.makerepo Group/Subgroup/Repo`, this will be `Group/Subgroup` so we can create it
 REPO_PREFIX=$(dirname "$REPO_PATH")
