@@ -34,3 +34,5 @@ echo "Creating git repository at $REPO"
 
 sudo -u git mkdir -p "$GIT_HOME/$REPO_PREFIX"
 sudo -u git git init --bare "$REPO"
+# If there is no description, just don't show anything instead of the annoying default 'Unnamed repository...'
+sudo -u git bash -c "echo '' > '$REPO/description'"
