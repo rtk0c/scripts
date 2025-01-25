@@ -1,6 +1,18 @@
+# Music Tools
+
+Set of scripts for managing a local music library.
+
+# id3_autotag.py
+
+Automatically parse author, title, and tracknumber from file names, and apply them as id3 tags.
+
+# id3_batchedit.py
+
+Batch edit any id3 tags in a text editor.
+
 # process_music.py
 
-This is a script designed for archiving classic music concerts, where multiple pieces are recorded into a single video, often surrounded by certain noises (such as programme announcers and claps). If you want to see it in action, go straight to the [demos]()#demonstration.
+Script designed for archiving classic music concerts, where multiple pieces are recorded into a single video, often surrounded by certain noises (such as programme announcers and claps). If you want to see it in action, go straight to the [demos](#demonstration).
 
 ## Functionality
 - Download & extract the audio track of some hosted media, e.g. a Youtube video, or something on Bilibili

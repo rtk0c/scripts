@@ -102,3 +102,15 @@ def int_to_roman_unicode(number: int) -> str:
   if number >= len(ROMAN_UNICODE_UPPER):
     return "<UNKNOWN>"
   return ROMAN_UNICODE_UPPER[number - 1]
+
+def file_ext_stripper(exts: Set[str]):
+  def stripper(s: str) -> str:
+    dot_idx = s.rfind('.')
+    if dot_idx == -1:
+      return s
+    suffix = s[(dot_idx+1):]
+    if suffix in exts:
+      return s[:dot_idx]
+    else:
+      return s
+  return stripper
