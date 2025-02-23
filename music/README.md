@@ -79,3 +79,7 @@ Breaking it down:
   - The value specified after the colon is *optionally quoted*.
 - Lines starting with `#` are comments
 - The chunk names are not quoted here to show it is accepted
+
+# split_audio_by_timestamp.py
+
+This is my original script, adapted from probably a gist somewhere on the internet that I can no longer find. Keeping here for reference.
