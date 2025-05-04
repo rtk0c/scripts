@@ -16,12 +16,15 @@ else
 	echo "cookie: $COOKIE"
 fi
 
+EXTRA_ARGS=()
+
 # https://stackoverflow.com/a/1885534
 read -p "Route 10.0.0.0/8 only, instead of accepting the AnyConnect gateway's advertised routes? (y/N)" REPLY
 echo #Move to next line
 if [[ $REPLY =~ ^[Yy]$ ]]; then
-	ANYCONNECT_SCRIPT='--server "vpn-slice 10.0.0.0/8"'
+	EXTRA_ARGS+=('--script')
+	EXTRA_ARGS+=('vpn-slice 10.0.0.0/8')
 fi
 
 # The gateway advertises 10.0.0.0/8 AND a default route, which we don't care about
-echo $COOKIE | sudo openconnect $HOST --cookie-on-stdin $ANYCONNECT_SCRIPT --servercert $FINGERPRINT
+echo $COOKIE | sudo openconnect "$HOST" --cookie-on-stdin --servercert "$FINGERPRINT" "${EXTRA_ARGS[@]}"
