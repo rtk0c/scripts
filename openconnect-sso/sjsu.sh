@@ -6,22 +6,25 @@ echo "server: $HOST"
 
 : "${VPN_ROUTE:=10.0.0.0/8}"
 
+interactive_prompt() {
+	echo ''
+	echo "set \$$1 to avoid this interactive prompt"
+	echo "note: prefix '$1=' will be automatically stripped from input here"
+	echo "note: this means you may paste the whole line from 'openconnect-sso --authenticate'"
+	read -p "enter $1: " $1
+}
+
 if [[ $FINGERPRINT = '' ]]; then
-	echo 'set $FINGERPRINT to avoid this interactive prompt'
-	echo 'note: you may past the whole line from `openconnect-sso --authenticate`, like FINGER=xxxxyyyyzzzz'
-	read -p 'enter server fingerprint: ' FINGERPRINT
+	interactive_prompt FINGERPRINT
 	FINGERPRINT=${FINGERPRINT#'FINGERPRINT='}
-else
-	echo "fingerprint: $FINGERPRINT"
 fi
+echo "fingerprint: $FINGERPRINT"
 
 if [[ $COOKIE = '' ]]; then
-	echo 'set $COOKIE to avoid this interactive prompt'
-	read -p 'enter cookie: ' COOKIE
+	interactive_prompt COOKIE
 	COOKIE=${COOKIE#'COOKIE='}
-else
-	echo "cookie: $COOKIE"
 fi
+echo "cookie: $COOKIE"
 
 if [[ $(type -P vpn-slice) ]]; then
 	# vpn-slice exists, use that
