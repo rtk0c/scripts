@@ -16,15 +16,15 @@ This is designed for if you need to run the VPN on a headless or inconvenient-to
 
 To obtain the cookie etc., I personally use
 ```sh
-$ openconnect-sso --server vpn.sjsu.edu --authgroup Student-SSO --user ${YOUR_STUDENT_ID} --authenticate
+$ openconnect-sso --server vpn.sjsu.edu --authgroup Student-SSO --user ${YOUR_TOWER_ID} --authenticate
 ```
+(where `YOUR_TOWER_ID` is that 7 digit number that comes on your Tower ID card)
 which will spit out something like
 ```
 HOST=https://vpn.sjsu.edu/
 COOKIE=YESTHETHINGBELOWISSUPPOSEDTOBESCREAMMING00@@-002THANKSFORLISTENINGTOMYJOKE
 FINGERPRINT=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 ```
-Note `YOUR_STUDENT_ID` is the 7 digit number on your Tower ID card. (Otherwise known as the Tower ID, I just thought writing the above in this verbose manner will reduce ambiguity for the fast skimmers. Tell me if it's actually helpful.)
 
 ## `sjsu_auth+connect.sh`
 
@@ -32,5 +32,5 @@ Install `openconnect`, _and_ [`openconnect-sso`](https://github.com/vlaci/openco
 
 This is combines the authentication step and the connection step in one script.
 ```sh
-$ ./sjsu_auth+connect.sh ${YOUR_STUDENT_ID}
+$ ./sjsu_auth+connect.sh ${YOUR_TOWER_ID}
 ```
