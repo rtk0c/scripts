@@ -354,16 +354,16 @@ def run_user_facing_program(args):
   else:
     data_dir = get_default_data_dir()
 
-  print(f"-- Using data dir: {ctx.data_dir}")
+  print(f"-- Using data dir: {data_dir}")
 
-  index_file = os.path.join(self.data_dir, 'index.json')
+  index_file = os.path.join(data_dir, 'index.json')
   match args.subparser_name:
     case 'update':
       download_version_index(index_file)
       print('-- Finished downloading version index')
       return
 
-  ctx = Context(load_version_index(index_file))
+  ctx = Context(data_dir, load_version_index(index_file))
   match args.subparser_name:
     case 'update':
       pass
