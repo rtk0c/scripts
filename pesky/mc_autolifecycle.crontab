@@ -1,10 +1,15 @@
-AUTOLIFECYCLE = /home/hnosm/Games/Minecraft/autolifecycle.sh
+# NOTE: example crontab
+# please adapt to the current circumstances
+
+# path to script
+AUTOLIFECYCLE = /home/server/Minecraft/autolifecycle.sh
 40 23 * * * $AUTOLIFECYCLE sendcmd 'say Server shutting down in 30 minutes.'
 55 23 * * * $AUTOLIFECYCLE sendcmd 'say Server shutting down in 15 minutes.'
 05 00 * * * $AUTOLIFECYCLE sendcmd 'say Server shutting down in 5 minutes.'
 08 00 * * * $AUTOLIFECYCLE sendcmd 'say Server shutting down in 2 minutes.'
 09 00 * * * $AUTOLIFECYCLE sendcmd 'say Server shutting down in 1 minute, finish your work now!'
 # Shutdown the server at an offset to not interrupt backups (which usually happens at whole hours)
+# e.g. FTB Backups or whatever the new fangled backup mod is now
 10 00 * * * $AUTOLIFECYCLE shutdown
 # Restart the server in the morning
 00 06 * * * $AUTOLIFECYCLE reboot
